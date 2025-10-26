@@ -1,13 +1,18 @@
 <!DOCTYPE html>
-<html lang="id">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>wifisekre.net - Sistem Penjualan Voucher</title>
+<html>
+<head>
+    <title>Wifi Voucher Sales</title>
     <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body>
+    <!-- TAMBAHKAN INI -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script>
+        // Pastikan jsPDF tersedia sebagai global
+        window.jsPDF = window.jspdf.jsPDF;
+    </script>
+</head>
+<body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
-  </body>
+</body>
 </html>

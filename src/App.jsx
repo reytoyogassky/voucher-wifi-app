@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Users, Package, DollarSign, FileText, Plus, Eye, Trash2, Edit2, CheckCircle, XCircle, History, Download, Camera } from 'lucide-react';
+import { Users, Package, DollarSign, FileText, Plus, Eye, Trash2, Edit2, CheckCircle, XCircle, History, Download, Camera, Filter, Calendar, Printer } from 'lucide-react';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+import jsPDF from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm';
 
-// KONFIGURASI SUPABASE - GANTI DENGAN DATA ANDA
-const SUPABASE_URL = 'https://nvfmqhoeigxhbrdyscqz.supabase.co'; // Ganti dengan URL Supabase Anda
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52Zm1xaG9laWd4aGJyZHlzY3F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDk2NTMsImV4cCI6MjA3NzAyNTY1M30.2xfjtHus5q-fXa7pVjkn1zN2648vZxe5gVBgpM-Sx4g'; // Ganti dengan Anon Key Anda
+// KONFIGURASI SUPABASE
+const SUPABASE_URL = 'https://nvfmqhoeigxhbrdyscqz.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52Zm1xaG9laWd4aGJyZHlzY3F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDk2NTMsImV4cCI6MjA3NzAyNTY1M30.2xfjtHus5q-fXa7pVjkn1zN2648vZxe5gVBgpM-Sx4g';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -43,12 +44,44 @@ const WifiVoucherSalesApp = () => {
     password: ''
   });
 
-  // Ref for voucher card screenshot
+  // Filter states untuk Sales dan Debts
+  const [salesFilters, setSalesFilters] = useState({
+    startDate: '',
+    endDate: '',
+    customerName: '',
+    adminName: '',
+    paymentMethod: ''
+  });
+
+  const [debtsFilters, setDebtsFilters] = useState({
+    startDate: '',
+    endDate: '',
+    customerName: '',
+    adminName: '',
+    status: ''
+  });
+
+  // Ref for voucher card screenshot dan PDF
   const voucherCardRef = useRef(null);
+  const reportRef = useRef(null);
 
   // Load data from database
   useEffect(() => {
-    loadData();
+    // Persist login: Load dari localStorage
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+      const user = JSON.parse(savedUser);
+      loadData().then(() => {
+        const validUser = admins.find(a => a.id === user.id && a.username === user.username);
+        if (validUser) {
+          setCurrentUser(validUser);
+        } else {
+          localStorage.removeItem('currentUser');
+        }
+      });
+    } else {
+      loadData();
+    }
   }, []);
 
   const loadData = async () => {
@@ -109,6 +142,7 @@ const WifiVoucherSalesApp = () => {
     const admin = admins.find(a => a.username === username && a.password === password);
     if (admin) {
       setCurrentUser(admin);
+      localStorage.setItem('currentUser', JSON.stringify(admin));
       return true;
     }
     return false;
@@ -116,6 +150,7 @@ const WifiVoucherSalesApp = () => {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    localStorage.removeItem('currentUser');
     setActiveTab('dashboard');
   };
 
@@ -338,6 +373,54 @@ const WifiVoucherSalesApp = () => {
     }
   };
 
+  // Fungsi filter data
+  const filterSales = (salesData) => {
+    return salesData.filter(sale => {
+      const saleDate = new Date(sale.sold_at);
+      const startDate = salesFilters.startDate ? new Date(salesFilters.startDate) : null;
+      const endDate = salesFilters.endDate ? new Date(salesFilters.endDate) : null;
+      
+      if (startDate && saleDate < startDate) return false;
+      if (endDate && saleDate > endDate) return false;
+      if (salesFilters.customerName && !sale.customer_name.toLowerCase().includes(salesFilters.customerName.toLowerCase())) return false;
+      if (salesFilters.adminName && sale.admin?.name !== salesFilters.adminName) return false;
+      if (salesFilters.paymentMethod && sale.payment_method !== salesFilters.paymentMethod) return false;
+      return true;
+    });
+  };
+
+  const filterDebts = (debtsData) => {
+    return debtsData.filter(debt => {
+      const debtDate = new Date(debt.created_at);
+      const startDate = debtsFilters.startDate ? new Date(debtsFilters.startDate) : null;
+      const endDate = debtsFilters.endDate ? new Date(debtsFilters.endDate) : null;
+      
+      if (startDate && debtDate < startDate) return false;
+      if (endDate && debtDate > endDate) return false;
+      if (debtsFilters.customerName && !debt.customer_name.toLowerCase().includes(debtsFilters.customerName.toLowerCase())) return false;
+      if (debtsFilters.adminName && debt.admin?.name !== debtsFilters.adminName) return false;
+      if (debtsFilters.status && debt.status !== debtsFilters.status) return false;
+      return true;
+    });
+  };
+
+  // Fungsi cetak PDF
+  const handlePrintReport = async (data, title) => {
+    if (!reportRef.current) return;
+    
+    try {
+      const html2canvas = (await import('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')).default;
+      const pdf = new jsPDF();
+      const canvas = await html2canvas(reportRef.current, { scale: 2 });
+      const imgData = canvas.toDataURL('image/png');
+      pdf.addImage(imgData, 'PNG', 10, 10, 190, 0);
+      pdf.save(`${title}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Gagal generate PDF. Silakan coba lagi.');
+    }
+  };
+
   const toggleVoucherSelection = (code) => {
     setSaleForm(prev => ({
       ...prev,
@@ -476,6 +559,8 @@ const WifiVoucherSalesApp = () => {
             getAvailableVouchers={getAvailableVouchers}
             getAdminSales={getAdminSales}
             getAdminDebts={getAdminDebts}
+            onPrintReport={() => handlePrintReport(sales, 'Laporan Dashboard')}
+            reportRef={reportRef}
           />
         )}
 
@@ -493,19 +578,25 @@ const WifiVoucherSalesApp = () => {
         {activeTab === 'sales' && (
           <SalesTab
             currentUser={currentUser}
-            sales={sales}
+            sales={filterSales(currentUser.role === 'superadmin' ? sales : getAdminSales(currentUser.id))}
             admins={admins}
-            getAdminSales={getAdminSales}
+            filters={salesFilters}
+            setFilters={setSalesFilters}
+            onPrintReport={() => handlePrintReport(filterSales(currentUser.role === 'superadmin' ? sales : getAdminSales(currentUser.id)), 'Laporan Penjualan')}
+            reportRef={reportRef}
           />
         )}
 
         {activeTab === 'debts' && (
           <DebtsTab
             currentUser={currentUser}
-            debts={debts}
-            getAdminDebts={getAdminDebts}
+            debts={filterDebts(currentUser.role === 'superadmin' ? debts : getAdminDebts(currentUser.id))}
+            filters={debtsFilters}
+            setFilters={setDebtsFilters}
             setSelectedDebt={setSelectedDebt}
             setShowDebtPaymentModal={setShowDebtPaymentModal}
+            onPrintReport={() => handlePrintReport(filterDebts(currentUser.role === 'superadmin' ? debts : getAdminDebts(currentUser.id)), 'Laporan Hutang')}
+            reportRef={reportRef}
           />
         )}
 
@@ -715,7 +806,7 @@ const LoginPage = ({ onLogin }) => {
   );
 };
 
-const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRevenue, getTotalDebtAmount, getAvailableVouchers, getAdminSales, getAdminDebts }) => {
+const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRevenue, getTotalDebtAmount, getAvailableVouchers, getAdminSales, getAdminDebts, onPrintReport, reportRef }) => {
   const isSuperadmin = currentUser.role === 'superadmin';
   const myRevenue = getTotalRevenue(currentUser.id);
   const myDebt = getTotalDebtAmount(currentUser.id);
@@ -724,7 +815,16 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <h2 className="text-2xl font-bold text-gray-800">Dashboard</h2>
+        <button
+          onClick={onPrintReport}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm md:text-base"
+        >
+          <Printer className="h-5 w-5" />
+          Cetak Laporan
+        </button>
+      </div>
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
@@ -754,7 +854,7 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
       </div>
 
       {isSuperadmin && (
-        <div className="bg-white rounded-xl shadow-md p-6">
+        <div ref={reportRef} className="bg-white rounded-xl shadow-md p-6">
           <h3 className="text-xl font-bold text-gray-800 mb-4">Performa Admin</h3>
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -954,22 +1054,95 @@ const SellTab = ({ vouchers, saleForm, setSaleForm, handleSellVoucher, getAvaila
   );
 };
 
-const SalesTab = ({ currentUser, sales, admins, getAdminSales }) => {
+const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintReport, reportRef }) => {
   const isSuperadmin = currentUser.role === 'superadmin';
-  const displaySales = isSuperadmin ? sales : getAdminSales(currentUser.id);
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Riwayat Penjualan</h2>
-      
-      {displaySales.length === 0 ? (
-        <div className="text-center py-12">
-          <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">Belum ada riwayat penjualan</p>
+    <div className="bg-white rounded-xl shadow-md p-4 md:p-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+        <h2 className="text-xl md:text-2xl font-bold text-gray-800">Riwayat Penjualan</h2>
+        <button
+          onClick={onPrintReport}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm md:text-base"
+        >
+          <Printer className="h-5 w-5" />
+          Cetak Laporan
+        </button>
+      </div>
+
+      {/* Filter Section */}
+      <div className="mb-6 bg-gray-50 p-4 rounded-lg">
+        <h3 className="text-lg font-medium text-gray-700 mb-4 flex items-center gap-2">
+          <Filter className="h-5 w-5" />
+          Filter
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Mulai</label>
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Akhir</label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pelanggan</label>
+            <input
+              type="text"
+              value={filters.customerName}
+              onChange={(e) => setFilters({ ...filters, customerName: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+              placeholder="Cari nama..."
+            />
+          </div>
+          {isSuperadmin && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nama Admin</label>
+              <select
+                value={filters.adminName}
+                onChange={(e) => setFilters({ ...filters, adminName: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+              >
+                <option value="">Semua Admin</option>
+                {admins.map(admin => (
+                  <option key={admin.id} value={admin.name}>{admin.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Metode Pembayaran</label>
+            <select
+              value={filters.paymentMethod}
+              onChange={(e) => setFilters({ ...filters, paymentMethod: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+            >
+              <option value="">Semua</option>
+              <option value="cash">Cash</option>
+              <option value="hutang">Hutang</option>
+            </select>
+          </div>
         </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      </div>
+
+      <div ref={reportRef} className="overflow-x-auto">
+        {sales.length === 0 ? (
+          <div className="text-center py-12">
+            <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+            <p className="text-gray-500">Belum ada riwayat penjualan</p>
+          </div>
+        ) : (
+          <table className="w-full min-w-full">
             <thead>
               <tr className="border-b-2 border-gray-200">
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Tanggal & Jam</th>
@@ -984,7 +1157,7 @@ const SalesTab = ({ currentUser, sales, admins, getAdminSales }) => {
               </tr>
             </thead>
             <tbody>
-              {displaySales.map(sale => (
+              {sales.map(sale => (
                 <tr key={sale.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-3 px-4 text-sm">
                     {new Date(sale.sold_at).toLocaleString('id-ID', {
@@ -1026,117 +1199,193 @@ const SalesTab = ({ currentUser, sales, admins, getAdminSales }) => {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
 
-const DebtsTab = ({ currentUser, debts, getAdminDebts, setSelectedDebt, setShowDebtPaymentModal }) => {
+const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, setShowDebtPaymentModal, onPrintReport, reportRef }) => {
   const isSuperadmin = currentUser.role === 'superadmin';
-  const displayDebts = isSuperadmin ? debts : getAdminDebts(currentUser.id);
-  const unpaidDebts = displayDebts.filter(d => d.status !== 'paid');
-  const paidDebts = displayDebts.filter(d => d.status === 'paid');
+  const unpaidDebts = debts.filter(d => d.status !== 'paid');
+  const paidDebts = debts.filter(d => d.status === 'paid');
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-xl shadow-md p-6">
-        <h2 className="text-2xl font-bold text-gray-800 mb-6">Data Hutang Belum Lunas</h2>
-        
-        {unpaidDebts.length === 0 ? (
-          <div className="text-center py-12">
-            <CheckCircle className="h-16 w-16 text-green-300 mx-auto mb-4" />
-            <p className="text-gray-500">Tidak ada hutang yang belum lunas</p>
+      <div className="bg-white rounded-xl shadow-md p-4 md:p-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+          <h2 className="text-xl md:text-2xl font-bold text-gray-800">Data Hutang Belum Lunas</h2>
+          <button
+            onClick={onPrintReport}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 text-sm md:text-base"
+          >
+            <Printer className="h-5 w-5" />
+            Cetak Laporan
+          </button>
+        </div>
+
+        {/* Filter Section */}
+        <div className="mb-6 bg-gray-50 p-4 rounded-lg">
+          <h3 className="text-lg font-medium text-gray-700 mb-4 flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filter
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Mulai</label>
+              <input
+                type="date"
+                value={filters.startDate}
+                onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Akhir</label>
+              <input
+                type="date"
+                value={filters.endDate}
+                onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pelanggan</label>
+              <input
+                type="text"
+                value={filters.customerName}
+                onChange={(e) => setFilters({ ...filters, customerName: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                placeholder="Cari nama..."
+              />
+            </div>
+            {isSuperadmin && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Admin</label>
+                <select
+                  value={filters.adminName}
+                  onChange={(e) => setFilters({ ...filters, adminName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+                >
+                  <option value="">Semua Admin</option>
+                  {Array.from(new Set(debts.map(d => d.admin?.name).filter(Boolean))).map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Status Hutang</label>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 text-sm"
+              >
+                <option value="">Semua Status</option>
+                <option value="unpaid">Belum Bayar</option>
+                <option value="partial">Cicilan</option>
+                <option value="paid">Lunas</option>
+              </select>
+            </div>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {unpaidDebts.map(debt => (
-              <div key={debt.id} className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
-                    <p className="text-sm text-gray-600">{debt.customer_phone}</p>
-                    {isSuperadmin && (
-                      <p className="text-xs text-gray-500 mt-1">Admin: {debt.admin?.name || 'N/A'}</p>
-                    )}
-                    <p className="text-xs text-gray-500 mt-1">
-                      {new Date(debt.created_at).toLocaleString('id-ID', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                    debt.status === 'unpaid'
-                      ? 'bg-red-100 text-red-700'
-                      : 'bg-yellow-100 text-yellow-700'
-                  }`}>
-                    {debt.status === 'unpaid' ? 'Belum Bayar' : 'Cicilan'}
-                  </span>
-                </div>
-                
-                <div className="space-y-2 mb-3">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Total Hutang:</span>
-                    <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-600">Sudah Dibayar:</span>
-                    <span className="font-medium text-green-600">Rp {debt.paid.toLocaleString('id-ID')}</span>
-                  </div>
-                  <div className="flex justify-between text-lg font-bold">
-                    <span className="text-gray-800">Sisa:</span>
-                    <span className="text-red-600">Rp {debt.remaining.toLocaleString('id-ID')}</span>
-                  </div>
-                </div>
+        </div>
 
-                <div className="mb-3">
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className="bg-green-500 h-2 rounded-full transition-all"
-                      style={{ width: `${(debt.paid / debt.amount) * 100}%` }}
-                    ></div>
+        <div ref={reportRef}>
+          {unpaidDebts.length === 0 ? (
+            <div className="text-center py-12">
+              <CheckCircle className="h-16 w-16 text-green-300 mx-auto mb-4" />
+              <p className="text-gray-500">Tidak ada hutang yang belum lunas</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {unpaidDebts.map(debt => (
+                <div key={debt.id} className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
+                      <p className="text-sm text-gray-600">{debt.customer_phone}</p>
+                      {isSuperadmin && (
+                        <p className="text-xs text-gray-500 mt-1">Admin: {debt.admin?.name || 'N/A'}</p>
+                      )}
+                      <p className="text-xs text-gray-500 mt-1">
+                        {new Date(debt.created_at).toLocaleString('id-ID', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      debt.status === 'unpaid'
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-yellow-100 text-yellow-700'
+                    }`}>
+                      {debt.status === 'unpaid' ? 'Belum Bayar' : 'Cicilan'}
+                    </span>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1 text-center">
-                    {((debt.paid / debt.amount) * 100).toFixed(0)}% terbayar
-                  </p>
-                </div>
-
-                {debt.payments && debt.payments.length > 0 && (
-                  <div className="mb-3">
-                    <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
-                    <div className="space-y-1 max-h-24 overflow-y-auto">
-                      {debt.payments.map(payment => (
-                        <div key={payment.id} className="text-xs bg-white p-2 rounded">
-                          <div className="flex justify-between">
-                            <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
-                            <span className="text-gray-500">
-                              {new Date(payment.paid_at).toLocaleDateString('id-ID')}
-                            </span>
-                          </div>
-                          <p className="text-gray-500">Diterima: {payment.received_by}</p>
-                        </div>
-                      ))}
+                  
+                  <div className="space-y-2 mb-3">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Total Hutang:</span>
+                      <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-gray-600">Sudah Dibayar:</span>
+                      <span className="font-medium text-green-600">Rp {debt.paid.toLocaleString('id-ID')}</span>
+                    </div>
+                    <div className="flex justify-between text-lg font-bold">
+                      <span className="text-gray-800">Sisa:</span>
+                      <span className="text-red-600">Rp {debt.remaining.toLocaleString('id-ID')}</span>
                     </div>
                   </div>
-                )}
 
-                <button
-                  onClick={() => {
-                    setSelectedDebt(debt);
-                    setShowDebtPaymentModal(true);
-                  }}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
-                >
-                  Bayar Hutang
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+                  <div className="mb-3">
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-green-500 h-2 rounded-full transition-all"
+                        style={{ width: `${(debt.paid / debt.amount) * 100}%` }}
+                      ></div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1 text-center">
+                      {((debt.paid / debt.amount) * 100).toFixed(0)}% terbayar
+                    </p>
+                  </div>
+
+                  {debt.payments && debt.payments.length > 0 && (
+                    <div className="mb-3">
+                      <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
+                      <div className="space-y-1 max-h-24 overflow-y-auto">
+                        {debt.payments.map(payment => (
+                          <div key={payment.id} className="text-xs bg-white p-2 rounded">
+                            <div className="flex justify-between">
+                              <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
+                              <span className="text-gray-500">
+                                {new Date(payment.paid_at).toLocaleDateString('id-ID')}
+                              </span>
+                            </div>
+                            <p className="text-gray-500">Diterima: {payment.received_by}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      setSelectedDebt(debt);
+                      setShowDebtPaymentModal(true);
+                    }}
+                    className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm font-medium"
+                  >
+                    Bayar Hutang
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {paidDebts.length > 0 && (
