@@ -4,7 +4,7 @@ import {
   CheckCircle, XCircle, History, Download, Camera, Filter, Calendar, 
   Printer, Search, User, Phone, Menu, X, ChevronDown, ChevronUp, 
   ShoppingCart, Home, CreditCard, BarChart3, Settings, LogOut, Bell,
-  AlertCircle, TrendingUp, Wallet
+  AlertCircle, TrendingUp, Wallet, PieChart, Banknote, CreditCard as CreditCardIcon
 } from 'lucide-react';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import jsPDF from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm';
@@ -666,6 +666,28 @@ const WifiVoucherSalesApp = () => {
     }
   };
 
+  // FUNGSI BARU: Total Cash Semua Admin
+  const getTotalCashAllAdmins = () => {
+    return sales
+      .filter(sale => sale.payment_method === 'cash')
+      .reduce((total, sale) => total + sale.amount, 0);
+  };
+
+  // FUNGSI BARU: Total Hutang Semua Admin
+  const getTotalDebtAllAdmins = () => {
+    return debts.reduce((total, debt) => total + debt.amount, 0);
+  };
+
+  // FUNGSI BARU: Total Hutang Belum Lunas Semua Admin
+  const getTotalUnpaidDebtAllAdmins = () => {
+    return debts.reduce((total, debt) => total + debt.remaining, 0);
+  };
+
+  // FUNGSI BARU: Total Terbayar Semua Admin
+  const getTotalPaidDebtAllAdmins = () => {
+    return debts.reduce((total, debt) => total + debt.paid, 0);
+  };
+
   // Fungsi untuk menghitung total pendapatan per admin
   const getAdminRevenue = (adminId) => {
     const adminSales = sales.filter(s => s.sold_by === adminId);
@@ -1247,6 +1269,10 @@ const WifiVoucherSalesApp = () => {
               getAdminSales={getAdminSales}
               getAdminDebts={getAdminDebts}
               getAdminRevenue={getAdminRevenue}
+              getTotalCashAllAdmins={getTotalCashAllAdmins}
+              getTotalDebtAllAdmins={getTotalDebtAllAdmins}
+              getTotalUnpaidDebtAllAdmins={getTotalUnpaidDebtAllAdmins}
+              getTotalPaidDebtAllAdmins={getTotalPaidDebtAllAdmins}
               onPrintReport={() => handlePrintReport(sales, 'Laporan Dashboard', 'dashboard')}
               reportRef={reportRef}
               notifications={notifications}
@@ -1301,6 +1327,10 @@ const WifiVoucherSalesApp = () => {
               handleDeleteAdmin={handleDeleteAdmin}
               getAdminRevenue={getAdminRevenue}
               currentUser={currentUser}
+              getTotalCashAllAdmins={getTotalCashAllAdmins}
+              getTotalDebtAllAdmins={getTotalDebtAllAdmins}
+              getTotalUnpaidDebtAllAdmins={getTotalUnpaidDebtAllAdmins}
+              getTotalPaidDebtAllAdmins={getTotalPaidDebtAllAdmins}
             />
           )}
         </div>
@@ -1600,13 +1630,24 @@ const LoginPage = ({ onLogin }) => {
   );
 };
 
-// Komponen Dashboard Tab dengan Notifikasi
-const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRevenue, getTotalDebtAmount, getAvailableVouchers, getAdminSales, getAdminDebts, getAdminRevenue, onPrintReport, reportRef, notifications }) => {
+// Komponen Dashboard Tab dengan Notifikasi dan Total Semua Admin
+const DashboardTab = ({ 
+  currentUser, vouchers, sales, debts, admins, getTotalRevenue, getTotalDebtAmount, 
+  getAvailableVouchers, getAdminSales, getAdminDebts, getAdminRevenue,
+  getTotalCashAllAdmins, getTotalDebtAllAdmins, getTotalUnpaidDebtAllAdmins, getTotalPaidDebtAllAdmins,
+  onPrintReport, reportRef, notifications 
+}) => {
   const isSuperadmin = currentUser.role === 'superadmin';
   const myRevenue = getTotalRevenue(currentUser.id);
   const myDebt = getTotalDebtAmount(currentUser.id);
   const totalRevenue = getTotalRevenue();
   const totalDebt = getTotalDebtAmount();
+
+  // Data untuk semua admin
+  const totalCashAllAdmins = getTotalCashAllAdmins();
+  const totalDebtAllAdmins = getTotalDebtAllAdmins();
+  const totalUnpaidDebtAllAdmins = getTotalUnpaidDebtAllAdmins();
+  const totalPaidDebtAllAdmins = getTotalPaidDebtAllAdmins();
 
   return (
     <div className="space-y-6">
@@ -1657,6 +1698,44 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
           value={isSuperadmin ? sales.length : getAdminSales(currentUser.id).length}
           color="bg-yellow-500"
         />
+      </div>
+
+      {/* Total Semua Admin Section */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <PieChart className="h-5 w-5" />
+          Ringkasan Semua Admin
+        </h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={<Banknote className="h-6 w-6" />}
+            title="Total Cash Semua Admin"
+            value={`Rp ${totalCashAllAdmins.toLocaleString('id-ID')}`}
+            color="bg-green-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<CreditCardIcon className="h-6 w-6" />}
+            title="Total Hutang Semua Admin"
+            value={`Rp ${totalDebtAllAdmins.toLocaleString('id-ID')}`}
+            color="bg-blue-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<Wallet className="h-6 w-6" />}
+            title="Hutang Terbayar"
+            value={`Rp ${totalPaidDebtAllAdmins.toLocaleString('id-ID')}`}
+            color="bg-emerald-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<FileText className="h-6 w-6" />}
+            title="Hutang Belum Lunas"
+            value={`Rp ${totalUnpaidDebtAllAdmins.toLocaleString('id-ID')}`}
+            color="bg-orange-500"
+            compact={true}
+          />
+        </div>
       </div>
 
       {/* Notifications Section */}
@@ -2386,87 +2465,138 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
   );
 };
 
-// Komponen Admins Tab
-const AdminsTab = ({ admins, setShowAdminModal, handleDeleteAdmin, getAdminRevenue, currentUser }) => {
+// Komponen Admins Tab dengan Total Semua Admin
+const AdminsTab = ({ 
+  admins, 
+  setShowAdminModal, 
+  handleDeleteAdmin, 
+  getAdminRevenue, 
+  currentUser,
+  getTotalCashAllAdmins,
+  getTotalDebtAllAdmins,
+  getTotalUnpaidDebtAllAdmins,
+  getTotalPaidDebtAllAdmins
+}) => {
   const isSuperadmin = currentUser.role === 'superadmin';
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <h2 className="text-2xl font-bold text-gray-800">Data Admin</h2>
-        {isSuperadmin && (
-          <button
-            onClick={() => setShowAdminModal(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2 text-sm w-full sm:w-auto justify-center"
-          >
-            <Plus className="h-4 w-4" />
-            Tambah Admin
-          </button>
+    <div className="space-y-6">
+      {/* Total Semua Admin Card */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <PieChart className="h-5 w-5" />
+          Ringkasan Keuangan Semua Admin
+        </h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={<Banknote className="h-6 w-6" />}
+            title="Total Cash"
+            value={`Rp ${getTotalCashAllAdmins().toLocaleString('id-ID')}`}
+            color="bg-green-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<CreditCardIcon className="h-6 w-6" />}
+            title="Total Hutang"
+            value={`Rp ${getTotalDebtAllAdmins().toLocaleString('id-ID')}`}
+            color="bg-blue-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<Wallet className="h-6 w-6" />}
+            title="Hutang Terbayar"
+            value={`Rp ${getTotalPaidDebtAllAdmins().toLocaleString('id-ID')}`}
+            color="bg-emerald-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<FileText className="h-6 w-6" />}
+            title="Hutang Belum Lunas"
+            value={`Rp ${getTotalUnpaidDebtAllAdmins().toLocaleString('id-ID')}`}
+            color="bg-orange-500"
+            compact={true}
+          />
+        </div>
+      </div>
+
+      {/* Data Admin */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
+          <h2 className="text-2xl font-bold text-gray-800">Data Admin</h2>
+          {isSuperadmin && (
+            <button
+              onClick={() => setShowAdminModal(true)}
+              className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2 text-sm w-full sm:w-auto justify-center"
+            >
+              <Plus className="h-4 w-4" />
+              Tambah Admin
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {admins.map(admin => {
+            const revenue = getAdminRevenue(admin.id);
+            const totalDebt = revenue.debt;
+            const status = totalDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
+            const statusColor = totalDebt === 0 ? 'text-green-600' : 'text-red-600';
+            
+            return (
+              <div key={admin.id} className="border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-gray-800">{admin.name}</h3>
+                    <p className="text-sm text-gray-600">@{admin.username}</p>
+                    {admin.role === 'admin' && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-xs text-gray-500">
+                          Penjualan: {revenue.salesCount} voucher
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Cash: {revenue.cashCount} • Hutang: {revenue.debtCount}
+                        </p>
+                        <p className="text-xs text-green-600">
+                          Pendapatan: Rp {revenue.total.toLocaleString('id-ID')}
+                        </p>
+                        <p className={`text-xs font-medium ${statusColor}`}>
+                          Status Hutang: {status}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    admin.role === 'superadmin'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'bg-yellow-100 text-yellow-700'
+                  }`}>
+                    {admin.role === 'superadmin' ? 'Superadmin' : 'Admin'}
+                  </span>
+                </div>
+                
+                {admin.role !== 'superadmin' && isSuperadmin && (
+                  <button
+                    onClick={() => handleDeleteAdmin(admin.id)}
+                    className="w-full px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Hapus Admin
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Info untuk admin biasa */}
+        {!isSuperadmin && (
+          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <User className="h-4 w-4 inline mr-1" />
+              Anda login sebagai Admin. Hanya Superadmin yang dapat menambah atau menghapus admin.
+            </p>
+          </div>
         )}
       </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {admins.map(admin => {
-          const revenue = getAdminRevenue(admin.id);
-          const totalDebt = revenue.debt;
-          const status = totalDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
-          const statusColor = totalDebt === 0 ? 'text-green-600' : 'text-red-600';
-          
-          return (
-            <div key={admin.id} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex justify-between items-start mb-3">
-                <div className="flex-1 min-w-0">
-                  <h3 className="font-bold text-gray-800">{admin.name}</h3>
-                  <p className="text-sm text-gray-600">@{admin.username}</p>
-                  {admin.role === 'admin' && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs text-gray-500">
-                        Penjualan: {revenue.salesCount} voucher
-                      </p>
-                      <p className="text-xs text-gray-500">
-                        Cash: {revenue.cashCount} • Hutang: {revenue.debtCount}
-                      </p>
-                      <p className="text-xs text-green-600">
-                        Pendapatan: Rp {revenue.total.toLocaleString('id-ID')}
-                      </p>
-                      <p className={`text-xs font-medium ${statusColor}`}>
-                        Status Hutang: {status}
-                      </p>
-                    </div>
-                  )}
-                </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                  admin.role === 'superadmin'
-                    ? 'bg-purple-100 text-purple-700'
-                    : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {admin.role === 'superadmin' ? 'Superadmin' : 'Admin'}
-                </span>
-              </div>
-              
-              {admin.role !== 'superadmin' && isSuperadmin && (
-                <button
-                  onClick={() => handleDeleteAdmin(admin.id)}
-                  className="w-full px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition text-sm font-medium flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Hapus Admin
-                </button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Info untuk admin biasa */}
-      {!isSuperadmin && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <p className="text-sm text-blue-800">
-            <User className="h-4 w-4 inline mr-1" />
-            Anda login sebagai Admin. Hanya Superadmin yang dapat menambah atau menghapus admin.
-          </p>
-        </div>
-      )}
     </div>
   );
 };
