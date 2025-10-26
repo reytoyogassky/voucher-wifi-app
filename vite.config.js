@@ -1,11 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/voucher-wifi-app/',  // Ganti dengan nama repository Anda
+  base: '/voucher-wifi-app/',
   server: {
     port: 3000,
     open: true
+  },
+  build: {
+    outDir: 'dist',
+    sourcemap: false,
+    minify: 'esbuild'
   }
 })
