@@ -474,6 +474,7 @@ const WifiVoucherSalesApp = () => {
       alert('Gagal mengambil screenshot. Silakan screenshot manual.');
     }
   };
+
   const handlePayDebt = async () => {
     if (!selectedDebt || debtPaymentForm.amount <= 0) {
       alert('Masukkan jumlah pembayaran yang valid!');
@@ -607,10 +608,9 @@ const WifiVoucherSalesApp = () => {
       let yPosition = 20;
 
       // Header dengan gradient background ungu
-      pdf.setFillColor(139, 92, 246); // Warna ungu
+      pdf.setFillColor(139, 92, 246);
       pdf.rect(0, 0, pageWidth, 25, 'F');
       
-      // Logo dan judul
       pdf.setFontSize(16);
       pdf.setTextColor(255, 255, 255);
       pdf.text('Wifisekre.net', pageWidth / 2, 12, { align: 'center' });
@@ -618,7 +618,6 @@ const WifiVoucherSalesApp = () => {
       pdf.setFontSize(14);
       pdf.text(title, pageWidth / 2, 20, { align: 'center' });
 
-      // Informasi metadata
       pdf.setFontSize(8);
       pdf.setTextColor(100, 100, 100);
       pdf.text(`Dicetak pada: ${new Date().toLocaleString('id-ID')}`, 14, 32);
@@ -628,36 +627,34 @@ const WifiVoucherSalesApp = () => {
       yPosition = 45;
 
       if (type === 'dashboard') {
-        // LAPORAN DASHBOARD
         pdf.setFontSize(12);
         pdf.setTextColor(40, 40, 40);
         pdf.text('Ringkasan Keuangan', 14, yPosition);
         yPosition += 10;
 
-        // Statistik utama dengan tema ungu-kuning
         const stats = [
           { 
             label: 'Voucher Tersedia', 
             value: getAvailableVouchers().length.toString(), 
-            color: [139, 92, 246], // Ungu
+            color: [139, 92, 246],
             bgColor: [250, 245, 255]
           },
           { 
             label: 'Total Penjualan', 
             value: `${sales.length} transaksi`, 
-            color: [245, 158, 11], // Kuning
+            color: [245, 158, 11],
             bgColor: [255, 251, 235]
           },
           { 
             label: 'Pendapatan Cash', 
             value: `Rp ${getTotalRevenue().toLocaleString('id-ID')}`, 
-            color: [34, 197, 94], // Hijau
+            color: [34, 197, 94],
             bgColor: [240, 253, 244]
           },
           { 
             label: 'Hutang Belum Lunas', 
             value: `Rp ${getTotalDebtAmount().toLocaleString('id-ID')}`, 
-            color: [239, 68, 68], // Merah
+            color: [239, 68, 68],
             bgColor: [254, 242, 242]
           }
         ];
@@ -666,11 +663,9 @@ const WifiVoucherSalesApp = () => {
           const x = 14 + (index % 2) * 90;
           const y = yPosition + Math.floor(index / 2) * 20;
           
-          // Background card
           pdf.setFillColor(...stat.bgColor);
           pdf.roundedRect(x, y, 80, 16, 3, 3, 'F');
           
-          // Border dengan warna tema
           pdf.setDrawColor(...stat.color);
           pdf.setLineWidth(0.5);
           pdf.roundedRect(x, y, 80, 16, 3, 3, 'S');
@@ -687,63 +682,58 @@ const WifiVoucherSalesApp = () => {
 
         yPosition += 45;
 
-        // PERFORMANCE ADMIN (Superadmin only)
-        if (currentUser.role === 'superadmin') {
-          pdf.setFontSize(12);
-          pdf.setTextColor(139, 92, 246);
-          pdf.text('Performance Admin', 14, yPosition);
-          yPosition += 8;
+        pdf.setFontSize(12);
+        pdf.setTextColor(139, 92, 246);
+        pdf.text('Performance Admin', 14, yPosition);
+        yPosition += 8;
 
-          // Header tabel admin
-          pdf.setFillColor(250, 245, 255); // Light purple
-          pdf.rect(14, yPosition, pageWidth - 28, 8, 'F');
-          pdf.setDrawColor(139, 92, 246);
-          pdf.rect(14, yPosition, pageWidth - 28, 8, 'S');
+        pdf.setFillColor(250, 245, 255);
+        pdf.rect(14, yPosition, pageWidth - 28, 8, 'F');
+        pdf.setDrawColor(139, 92, 246);
+        pdf.rect(14, yPosition, pageWidth - 28, 8, 'S');
+        
+        pdf.setFontSize(8);
+        pdf.setTextColor(139, 92, 246);
+        pdf.setFont(undefined, 'bold');
+        pdf.text('Nama Admin', 16, yPosition + 5);
+        pdf.text('Penjualan', 70, yPosition + 5, { align: 'right' });
+        pdf.text('Cash', 95, yPosition + 5, { align: 'right' });
+        pdf.text('Hutang', 120, yPosition + 5, { align: 'right' });
+        pdf.text('Total', 150, yPosition + 5, { align: 'right' });
+        pdf.text('Status', 180, yPosition + 5, { align: 'right' });
+        yPosition += 10;
+
+        pdf.setFont(undefined, 'normal');
+        admins.filter(a => a.role === 'admin').forEach((admin, index) => {
+          if (yPosition > 250) {
+            pdf.addPage();
+            yPosition = 20;
+          }
+
+          const revenue = getAdminRevenue(admin.id);
+          const totalDebt = getTotalDebtAmount(admin.id);
+          const statusColor = totalDebt === 0 ? [34, 197, 94] : [245, 158, 11];
+          const statusText = totalDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
           
-          pdf.setFontSize(8);
-          pdf.setTextColor(139, 92, 246);
-          pdf.setFont(undefined, 'bold');
-          pdf.text('Nama Admin', 16, yPosition + 5);
-          pdf.text('Penjualan', 70, yPosition + 5, { align: 'right' });
-          pdf.text('Cash', 95, yPosition + 5, { align: 'right' });
-          pdf.text('Hutang', 120, yPosition + 5, { align: 'right' });
-          pdf.text('Total', 150, yPosition + 5, { align: 'right' });
-          pdf.text('Status', 180, yPosition + 5, { align: 'right' });
-          yPosition += 10;
-
-          pdf.setFont(undefined, 'normal');
-          admins.filter(a => a.role === 'admin').forEach((admin, index) => {
-            if (yPosition > 250) {
-              pdf.addPage();
-              yPosition = 20;
-            }
-
-            const revenue = getAdminRevenue(admin.id);
-            const totalDebt = getTotalDebtAmount(admin.id);
-            const statusColor = totalDebt === 0 ? [34, 197, 94] : [245, 158, 11];
-            const statusText = totalDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
-            
-            const bgColor = index % 2 === 0 ? [255, 255, 255] : [250, 250, 250];
-            
-            pdf.setFillColor(...bgColor);
-            pdf.rect(14, yPosition, pageWidth - 28, 6, 'F');
-            
-            pdf.setFontSize(7);
-            pdf.setTextColor(40, 40, 40);
-            pdf.text(admin.name, 16, yPosition + 4);
-            pdf.text(revenue.salesCount.toString(), 70, yPosition + 4, { align: 'right' });
-            pdf.text(`Rp ${revenue.cash.toLocaleString('id-ID')}`, 95, yPosition + 4, { align: 'right' });
-            pdf.text(`Rp ${revenue.debt.toLocaleString('id-ID')}`, 120, yPosition + 4, { align: 'right' });
-            pdf.text(`Rp ${revenue.total.toLocaleString('id-ID')}`, 150, yPosition + 4, { align: 'right' });
-            
-            pdf.setTextColor(...statusColor);
-            pdf.text(statusText, 180, yPosition + 4, { align: 'right' });
-            
-            yPosition += 8;
-          });
-        }
+          const bgColor = index % 2 === 0 ? [255, 255, 255] : [250, 250, 250];
+          
+          pdf.setFillColor(...bgColor);
+          pdf.rect(14, yPosition, pageWidth - 28, 6, 'F');
+          
+          pdf.setFontSize(7);
+          pdf.setTextColor(40, 40, 40);
+          pdf.text(admin.name, 16, yPosition + 4);
+          pdf.text(revenue.salesCount.toString(), 70, yPosition + 4, { align: 'right' });
+          pdf.text(`Rp ${revenue.cash.toLocaleString('id-ID')}`, 95, yPosition + 4, { align: 'right' });
+          pdf.text(`Rp ${revenue.debt.toLocaleString('id-ID')}`, 120, yPosition + 4, { align: 'right' });
+          pdf.text(`Rp ${revenue.total.toLocaleString('id-ID')}`, 150, yPosition + 4, { align: 'right' });
+          
+          pdf.setTextColor(...statusColor);
+          pdf.text(statusText, 180, yPosition + 4, { align: 'right' });
+          
+          yPosition += 8;
+        });
       } else if (type === 'sales') {
-        // LAPORAN PENJUALAN
         let totalCash = 0;
         let totalDebt = 0;
         let cashCount = 0;
@@ -761,7 +751,6 @@ const WifiVoucherSalesApp = () => {
 
         const totalAll = totalCash + totalDebt;
 
-        // Ringkasan penjualan dengan tema
         pdf.setFillColor(250, 245, 255);
         pdf.roundedRect(14, yPosition, pageWidth - 28, 25, 3, 3, 'F');
         pdf.setDrawColor(139, 92, 246);
@@ -786,7 +775,6 @@ const WifiVoucherSalesApp = () => {
 
         yPosition += 35;
 
-        // Header tabel
         pdf.setFillColor(139, 92, 246);
         pdf.rect(14, yPosition, pageWidth - 28, 6, 'F');
         pdf.setFontSize(7);
@@ -801,7 +789,6 @@ const WifiVoucherSalesApp = () => {
         pdf.text('JUMLAH', 180, yPosition + 4, { align: 'right' });
         yPosition += 8;
 
-        // Data penjualan
         pdf.setFont(undefined, 'normal');
         data.forEach((sale, index) => {
           if (yPosition > 250) {
@@ -820,7 +807,6 @@ const WifiVoucherSalesApp = () => {
           pdf.text(sale.voucher_code, 45, yPosition + 3.5);
           pdf.text(sale.customer_name !== '-' ? sale.customer_name : '-', 75, yPosition + 3.5);
           
-          // Warna berdasarkan metode pembayaran
           if (sale.payment_method === 'cash') {
             pdf.setTextColor(34, 197, 94);
             pdf.text('CASH', 110, yPosition + 3.5);
@@ -836,7 +822,6 @@ const WifiVoucherSalesApp = () => {
           yPosition += 6;
         });
       } else if (type === 'debts') {
-        // LAPORAN HUTANG
         let totalDebt = 0;
         let totalPaid = 0;
         let totalRemaining = 0;
@@ -854,10 +839,9 @@ const WifiVoucherSalesApp = () => {
           else unpaidCount++;
         });
 
-        // Ringkasan hutang dengan tema
-        pdf.setFillColor(255, 251, 235); // Light yellow
+        pdf.setFillColor(255, 251, 235);
         pdf.roundedRect(14, yPosition, pageWidth - 28, 30, 3, 3, 'F');
-        pdf.setDrawColor(245, 158, 11); // Yellow
+        pdf.setDrawColor(245, 158, 11);
         pdf.roundedRect(14, yPosition, pageWidth - 28, 30, 3, 3, 'S');
         
         pdf.setFontSize(9);
@@ -880,8 +864,7 @@ const WifiVoucherSalesApp = () => {
 
         yPosition += 40;
 
-        // Header tabel
-        pdf.setFillColor(245, 158, 11); // Yellow
+        pdf.setFillColor(245, 158, 11);
         pdf.rect(14, yPosition, pageWidth - 28, 6, 'F');
         pdf.setFontSize(7);
         pdf.setTextColor(255, 255, 255);
@@ -896,7 +879,6 @@ const WifiVoucherSalesApp = () => {
         pdf.text('ADMIN', 180, yPosition + 4, { align: 'right' });
         yPosition += 8;
 
-        // Data hutang
         pdf.setFont(undefined, 'normal');
         data.forEach((debt, index) => {
           if (yPosition > 250) {
@@ -917,7 +899,6 @@ const WifiVoucherSalesApp = () => {
           pdf.text(`Rp ${debt.paid.toLocaleString('id-ID')}`, 115, yPosition + 3.5, { align: 'right' });
           pdf.text(`Rp ${debt.remaining.toLocaleString('id-ID')}`, 140, yPosition + 3.5, { align: 'right' });
           
-          // Status dengan warna
           if (debt.status === 'paid') {
             pdf.setTextColor(34, 197, 94);
             pdf.text('LUNAS', 165, yPosition + 3.5, { align: 'right' });
@@ -936,7 +917,6 @@ const WifiVoucherSalesApp = () => {
         });
       }
 
-      // Footer dengan branding
       const footerY = pdf.internal.pageSize.getHeight() - 10;
       pdf.setFontSize(8);
       pdf.setTextColor(139, 92, 246);
@@ -1029,7 +1009,6 @@ const WifiVoucherSalesApp = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-yellow-50 pb-20">
-      {/* Header dengan User Info */}
       <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
@@ -1055,7 +1034,6 @@ const WifiVoucherSalesApp = () => {
       </nav>
 
       <div className="max-w-7xl mx-auto px-4 py-4">
-        {/* Main Content */}
         <div className="min-h-[calc(100vh-200px)]">
           {activeTab === 'dashboard' && (
             <DashboardTab
@@ -1094,11 +1072,11 @@ const WifiVoucherSalesApp = () => {
           {activeTab === 'sales' && (
             <SalesTab
               currentUser={currentUser}
-              sales={filterSales(currentUser.role === 'superadmin' ? sales : getAdminSales(currentUser.id))}
+              sales={filterSales(sales)}
               admins={admins}
               filters={salesFilters}
               setFilters={setSalesFilters}
-              onPrintReport={() => handlePrintReport(filterSales(currentUser.role === 'superadmin' ? sales : getAdminSales(currentUser.id)), 'Laporan Penjualan', 'sales')}
+              onPrintReport={() => handlePrintReport(filterSales(sales), 'Laporan Penjualan', 'sales')}
               reportRef={reportRef}
             />
           )}
@@ -1106,12 +1084,12 @@ const WifiVoucherSalesApp = () => {
           {activeTab === 'debts' && (
             <DebtsTab
               currentUser={currentUser}
-              debts={filterDebts(currentUser.role === 'superadmin' ? debts : getAdminDebts(currentUser.id))}
+              debts={filterDebts(debts)}
               filters={debtsFilters}
               setFilters={setDebtsFilters}
               setSelectedDebt={setSelectedDebt}
               setShowDebtPaymentModal={setShowDebtPaymentModal}
-              onPrintReport={() => handlePrintReport(filterDebts(currentUser.role === 'superadmin' ? debts : getAdminDebts(currentUser.id)), 'Laporan Hutang', 'debts')}
+              onPrintReport={() => handlePrintReport(filterDebts(debts), 'Laporan Hutang', 'debts')}
               reportRef={reportRef}
             />
           )}
@@ -1122,17 +1100,16 @@ const WifiVoucherSalesApp = () => {
               setShowAdminModal={setShowAdminModal}
               handleDeleteAdmin={handleDeleteAdmin}
               getAdminRevenue={getAdminRevenue}
+              getTotalDebtAmount={getTotalDebtAmount}
               currentUser={currentUser}
             />
           )}
         </div>
       </div>
 
-      {/* Bottom Navigation Bar Modern - 5 Menu untuk Semua User */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom">
         <div className="max-w-lg mx-auto">
           <div className="flex justify-around items-center px-2 sm:px-4">
-            {/* Dashboard Button */}
             <BottomNavButton
               active={activeTab === 'dashboard'}
               onClick={() => setActiveTab('dashboard')}
@@ -1140,7 +1117,6 @@ const WifiVoucherSalesApp = () => {
               label="Home"
             />
 
-            {/* Sales Button */}
             <BottomNavButton
               active={activeTab === 'sales'}
               onClick={() => setActiveTab('sales')}
@@ -1148,7 +1124,6 @@ const WifiVoucherSalesApp = () => {
               label="Sales"
             />
 
-            {/* Sell Button - Tampilan Berbeda */}
             <div className="relative -mt-6">
               <button
                 onClick={() => setActiveTab('sell')}
@@ -1172,7 +1147,6 @@ const WifiVoucherSalesApp = () => {
               </button>
             </div>
 
-            {/* Debts Button */}
             <BottomNavButton
               active={activeTab === 'debts'}
               onClick={() => setActiveTab('debts')}
@@ -1180,7 +1154,6 @@ const WifiVoucherSalesApp = () => {
               label="Hutang"
             />
 
-            {/* Admin Button - Untuk Semua User */}
             <BottomNavButton
               active={activeTab === 'admins'}
               onClick={() => setActiveTab('admins')}
@@ -1191,7 +1164,6 @@ const WifiVoucherSalesApp = () => {
         </div>
       </div>
       
-      {/* Modals */}
       {showAdminModal && currentUser.role === 'superadmin' && (
         <Modal title="Tambah Admin Baru" onClose={() => setShowAdminModal(false)}>
           <div className="space-y-4">
@@ -1272,7 +1244,7 @@ const WifiVoucherSalesApp = () => {
 
                   <div className="text-center text-xs text-purple-200">
                     <p>Untuk: {voucher.customerName}</p>
-                    <p className="mt-1">{new Date(voucher.soldAt).toLocaleDateString('id-ID', {
+                    <p className="mt-1">{new Date(voucher.soldAt).toLocaleString('id-ID', {
                       day: '2-digit',
                       month: 'long',
                       year: 'numeric',
@@ -1345,7 +1317,6 @@ const WifiVoucherSalesApp = () => {
   );
 };
 
-// Komponen Bottom Navigation Button yang Diperbarui
 const BottomNavButton = ({ active, onClick, icon, label }) => (
   <button
     onClick={onClick}
@@ -1364,7 +1335,6 @@ const BottomNavButton = ({ active, onClick, icon, label }) => (
   </button>
 );
 
-// Komponen Login Page
 const LoginPage = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -1422,9 +1392,7 @@ const LoginPage = ({ onLogin }) => {
   );
 };
 
-// Komponen Dashboard Tab dengan Welcome Card dan Icon untuk Penjualan Terbaru
 const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRevenue, getTotalDebtAmount, getAvailableVouchers, getAdminSales, getAdminDebts, getAdminRevenue, onPrintReport, reportRef }) => {
-  const isSuperadmin = currentUser.role === 'superadmin';
   const myRevenue = getTotalRevenue(currentUser.id);
   const myDebt = getTotalDebtAmount(currentUser.id);
   const totalRevenue = getTotalRevenue();
@@ -1432,7 +1400,6 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
 
   return (
     <div className="space-y-6">
-      {/* Welcome Card - HANYA di Dashboard */}
       <div className="bg-gradient-to-r from-purple-500 to-purple-700 rounded-2xl p-6 text-white shadow-lg">
         <h1 className="text-2xl font-bold">Welcome, {currentUser.name}! 👋</h1>
         <p className="text-purple-100 mt-1">Selamat berjuang hari ini! Semoga penjualan lancar!</p>
@@ -1453,7 +1420,6 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
         </button>
       </div>
       
-      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           icon={<Package className="h-8 w-8" />}
@@ -1463,127 +1429,119 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
         />
         <StatCard
           icon={<DollarSign className="h-8 w-8" />}
-          title={isSuperadmin ? "Pendapatan Cash" : "Pendapatan Cash Saya"}
-          value={`Rp ${(isSuperadmin ? totalRevenue : myRevenue).toLocaleString('id-ID')}`}
+          title="Pendapatan Cash"
+          value={`Rp ${totalRevenue.toLocaleString('id-ID')}`}
           color="bg-green-500"
         />
         <StatCard
           icon={<FileText className="h-8 w-8" />}
-          title={isSuperadmin ? "Hutang Belum Lunas" : "Hutang Belum Lunas Saya"}
-          value={`Rp ${(isSuperadmin ? totalDebt : myDebt).toLocaleString('id-ID')}`}
+          title="Hutang Belum Lunas"
+          value={`Rp ${totalDebt.toLocaleString('id-ID')}`}
           color="bg-red-500"
         />
         <StatCard
           icon={<Users className="h-8 w-8" />}
-          title={isSuperadmin ? "Total Penjualan" : "Penjualan Saya"}
-          value={isSuperadmin ? sales.length : getAdminSales(currentUser.id).length}
+          title="Total Penjualan"
+          value={sales.length}
           color="bg-yellow-500"
         />
       </div>
 
-      {/* Recent Sales dengan Icon */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <h3 className="text-xl font-bold text-gray-800 mb-4">Penjualan Terbaru</h3>
         <div className="space-y-3">
-          {(isSuperadmin ? sales : getAdminSales(currentUser.id))
-            .slice(0, 5)
-            .map(sale => (
-              <div key={sale.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center flex-1 min-w-0">
-                  {/* Icon berdasarkan metode pembayaran */}
-                  <div className={`mr-3 p-2 rounded-full ${
-                    sale.payment_method === 'cash' 
-                      ? 'bg-green-100 text-green-600' 
-                      : 'bg-red-100 text-red-600'
-                  }`}>
-                    {sale.payment_method === 'cash' ? (
-                      <DollarSign className="h-4 w-4" />
-                    ) : (
-                      <FileText className="h-4 w-4" />
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-800">Voucher: {sale.voucher_code}</p>
-                    <p className="text-sm text-gray-600">
-                      {sale.payment_method === 'cash' ? 'Cash' : 'Hutang'} • {sale.admin?.name || 'N/A'}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {new Date(sale.sold_at).toLocaleString('id-ID', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right ml-3">
-                  <p className="font-bold text-green-600">Rp {sale.amount.toLocaleString('id-ID')}</p>
-                  {sale.customer_name !== '-' && (
-                    <p className="text-sm text-gray-600">{sale.customer_name}</p>
+          {sales.slice(0, 5).map(sale => (
+            <div key={sale.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center flex-1 min-w-0">
+                <div className={`mr-3 p-2 rounded-full ${
+                  sale.payment_method === 'cash' 
+                    ? 'bg-green-100 text-green-600' 
+                    : 'bg-red-100 text-red-600'
+                }`}>
+                  {sale.payment_method === 'cash' ? (
+                    <DollarSign className="h-4 w-4" />
+                  ) : (
+                    <FileText className="h-4 w-4" />
                   )}
                 </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-800">Voucher: {sale.voucher_code}</p>
+                  <p className="text-sm text-gray-600">
+                    {sale.payment_method === 'cash' ? 'Cash' : 'Hutang'} • {sale.admin?.name || 'N/A'}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    {new Date(sale.sold_at).toLocaleString('id-ID', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
+                  </p>
+                </div>
               </div>
-            ))}
-          {(isSuperadmin ? sales : getAdminSales(currentUser.id)).length === 0 && (
+              <div className="text-right ml-3">
+                <p className="font-bold text-green-600">Rp {sale.amount.toLocaleString('id-ID')}</p>
+                {sale.customer_name !== '-' && (
+                  <p className="text-sm text-gray-600">{sale.customer_name}</p>
+                )}
+              </div>
+            </div>
+          ))}
+          {sales.length === 0 && (
             <p className="text-center text-gray-500 py-6">Belum ada penjualan</p>
           )}
         </div>
       </div>
 
-      {/* Admin Performance (Superadmin only) */}
-      {isSuperadmin && (
-        <div ref={reportRef} className="bg-white rounded-xl shadow-md p-6">
-          <h3 className="text-xl font-bold text-gray-800 mb-4">Performance Admin</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-full">
-              <thead>
-                <tr className="border-b-2 border-gray-200">
-                  <th className="text-left py-3 px-4 font-semibold text-gray-700">Nama Admin</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Penjualan</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Pendapatan Cash</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Pendapatan Hutang</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Total Pendapatan</th>
-                  <th className="text-right py-3 px-4 font-semibold text-gray-700">Status Hutang</th>
-                </tr>
-              </thead>
-              <tbody>
-                {admins.filter(a => a.role === 'admin').map(admin => {
-                  const revenue = getAdminRevenue(admin.id);
-                  const adminDebt = getTotalDebtAmount(admin.id);
-                  const status = adminDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
-                  const statusColor = adminDebt === 0 ? 'text-green-600' : 'text-red-600';
-                  
-                  return (
-                    <tr key={admin.id} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="py-3 px-4 font-medium">{admin.name}</td>
-                      <td className="py-3 px-4 text-right">{revenue.salesCount} voucher</td>
-                      <td className="py-3 px-4 text-right text-green-600 font-medium">
-                        Rp {revenue.cash.toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3 px-4 text-right text-blue-600 font-medium">
-                        Rp {revenue.debt.toLocaleString('id-ID')}
-                      </td>
-                      <td className="py-3 px-4 text-right text-purple-600 font-bold">
-                        Rp {revenue.total.toLocaleString('id-ID')}
-                      </td>
-                      <td className={`py-3 px-4 text-right font-bold ${statusColor}`}>
-                        {status}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+      <div ref={reportRef} className="bg-white rounded-xl shadow-md p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4">Performance Admin</h3>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-full">
+            <thead>
+              <tr className="border-b-2 border-gray-200">
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Nama Admin</th>
+                <th className="text-right py-3 px-4 font-semibold text-gray-700">Penjualan</th>
+                <th className="text-right py-3 px-4 font-semibold text-gray-700">Pendapatan Cash</th>
+                <th className="text-right py-3 px-4 font-semibold text-gray-700">Pendapatan Hutang</th>
+                <th className="text-right py-3 px-4 font-semibold text-gray-700">Total Pendapatan</th>
+                <th className="text-right py-3 px-4 font-semibold text-gray-700">Status Hutang</th>
+              </tr>
+            </thead>
+            <tbody>
+              {admins.filter(a => a.role === 'admin').map(admin => {
+                const revenue = getAdminRevenue(admin.id);
+                const adminDebt = getTotalDebtAmount(admin.id);
+                const status = adminDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
+                const statusColor = adminDebt === 0 ? 'text-green-600' : 'text-red-600';
+                
+                return (
+                  <tr key={admin.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="py-3 px-4 font-medium">{admin.name}</td>
+                    <td className="py-3 px-4 text-right">{revenue.salesCount} voucher</td>
+                    <td className="py-3 px-4 text-right text-green-600 font-medium">
+                      Rp {revenue.cash.toLocaleString('id-ID')}
+                    </td>
+                    <td className="py-3 px-4 text-right text-blue-600 font-medium">
+                      Rp {revenue.debt.toLocaleString('id-ID')}
+                    </td>
+                    <td className="py-3 px-4 text-right text-purple-600 font-bold">
+                      Rp {revenue.total.toLocaleString('id-ID')}
+                    </td>
+                    <td className={`py-3 px-4 text-right font-bold ${statusColor}`}>
+                      {status}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      )}
+      </div>
     </div>
   );
 };
 
-// Komponen Sell Tab (tanpa welcome card)
 const SellTab = ({ 
   vouchers, 
   saleForm, 
@@ -1599,7 +1557,6 @@ const SellTab = ({
 }) => {
   const availableVouchers = getAvailableVouchers();
   const totalAmount = saleForm.voucherCodes.length * 1000;
-
   const nameSuggestions = getFilteredSuggestions(saleForm.customerName);
 
   const selectNameSuggestion = (name) => {
@@ -1617,7 +1574,6 @@ const SellTab = ({
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Jual Voucher WiFi</h2>
       
       <div className="space-y-6">
-        {/* Voucher Selection */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Pilih Voucher ({availableVouchers.length} tersedia) - Dipilih: {saleForm.voucherCodes.length}
@@ -1650,7 +1606,6 @@ const SellTab = ({
           </div>
         </div>
 
-        {/* Customer Name dengan Autocomplete */}
         <div className="relative">
           <label className="block text-sm font-medium text-gray-700 mb-2">Nama Pelanggan</label>
           <input
@@ -1694,7 +1649,6 @@ const SellTab = ({
           )}
         </div>
 
-        {/* Payment Method */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Metode Pembayaran</label>
           <div className="grid grid-cols-2 gap-3">
@@ -1723,7 +1677,6 @@ const SellTab = ({
           </div>
         </div>
 
-        {/* Phone Number untuk Hutang */}
         {saleForm.paymentMethod === 'hutang' && (
           <div className="p-4 bg-red-50 rounded-lg border border-red-200">
             <p className="text-sm font-medium text-red-800 mb-3">
@@ -1743,7 +1696,6 @@ const SellTab = ({
           </div>
         )}
 
-        {/* Total Amount */}
         <div className="bg-gray-50 p-4 rounded-lg">
           <div className="flex justify-between items-center mb-2">
             <span className="text-gray-700">Jumlah Voucher:</span>
@@ -1761,7 +1713,6 @@ const SellTab = ({
           </div>
         </div>
 
-        {/* Submit Button */}
         <button
           onClick={handleSellVoucher}
           disabled={saleForm.voucherCodes.length === 0}
@@ -1775,9 +1726,7 @@ const SellTab = ({
   );
 };
 
-// Komponen Sales Tab (tanpa welcome card)
 const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintReport, reportRef }) => {
-  const isSuperadmin = currentUser.role === 'superadmin';
   const [showFilters, setShowFilters] = useState(false);
 
   return (
@@ -1802,7 +1751,6 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
         </div>
       </div>
 
-      {/* Filter Section */}
       {showFilters && (
         <div className="mb-6 bg-gray-50 p-4 rounded-lg">
           <h3 className="text-lg font-medium text-gray-700 mb-4 flex items-center gap-2">
@@ -1838,21 +1786,19 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
                 placeholder="Cari nama pelanggan..."
               />
             </div>
-            {isSuperadmin && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Admin</label>
-                <select
-                  value={filters.adminName}
-                  onChange={(e) => setFilters({ ...filters, adminName: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
-                >
-                  <option value="">Semua Admin</option>
-                  {admins.map(admin => (
-                    <option key={admin.id} value={admin.name}>{admin.name}</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nama Admin</label>
+              <select
+                value={filters.adminName}
+                onChange={(e) => setFilters({ ...filters, adminName: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+              >
+                <option value="">Semua Admin</option>
+                {admins.map(admin => (
+                  <option key={admin.id} value={admin.name}>{admin.name}</option>
+                ))}
+              </select>
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Metode Pembayaran</label>
               <select
@@ -1883,9 +1829,7 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Tanggal & Jam</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Voucher</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Username</th>
-                  {isSuperadmin && (
-                    <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Dijual Oleh</th>
-                  )}
+                  <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Dijual Oleh</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Pembayaran</th>
                   <th className="text-left py-3 px-4 font-semibold text-gray-700 text-sm">Pelanggan</th>
                   <th className="text-right py-3 px-4 font-semibold text-gray-700 text-sm">Harga</th>
@@ -1905,9 +1849,7 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
                     </td>
                     <td className="py-3 px-4 font-medium text-sm">{sale.voucher_code}</td>
                     <td className="py-3 px-4 font-mono text-sm bg-gray-50 rounded">{sale.voucher_username}</td>
-                    {isSuperadmin && (
-                      <td className="py-3 px-4 text-sm">{sale.admin?.name || 'N/A'}</td>
-                    )}
+                    <td className="py-3 px-4 text-sm">{sale.admin?.name || 'N/A'}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         {sale.payment_method === 'cash' ? (
@@ -1948,9 +1890,7 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
   );
 };
 
-// Komponen Debts Tab (tanpa welcome card)
 const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, setShowDebtPaymentModal, onPrintReport, reportRef }) => {
-  const isSuperadmin = currentUser.role === 'superadmin';
   const [showFilters, setShowFilters] = useState(false);
   const unpaidDebts = debts.filter(d => d.status !== 'paid');
   const paidDebts = debts.filter(d => d.status === 'paid');
@@ -1978,7 +1918,6 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
           </div>
         </div>
 
-        {/* Filter Section */}
         {showFilters && (
           <div className="mb-6 bg-gray-50 p-4 rounded-lg">
             <h3 className="text-lg font-medium text-gray-700 mb-4 flex items-center gap-2">
@@ -2014,21 +1953,19 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
                   placeholder="Cari nama pelanggan..."
                 />
               </div>
-              {isSuperadmin && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Nama Admin</label>
-                  <select
-                    value={filters.adminName}
-                    onChange={(e) => setFilters({ ...filters, adminName: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
-                  >
-                    <option value="">Semua Admin</option>
-                    {Array.from(new Set(debts.map(d => d.admin?.name).filter(Boolean))).map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nama Admin</label>
+                <select
+                  value={filters.adminName}
+                  onChange={(e) => setFilters({ ...filters, adminName: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                >
+                  <option value="">Semua Admin</option>
+                  {Array.from(new Set(debts.map(d => d.admin?.name).filter(Boolean))).map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status Hutang</label>
                 <select
@@ -2060,9 +1997,7 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
                     <div className="flex-1 min-w-0">
                       <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
                       <p className="text-sm text-gray-600">{debt.customer_phone}</p>
-                      {isSuperadmin && (
-                        <p className="text-xs text-gray-500 mt-1">Admin: {debt.admin?.name || 'N/A'}</p>
-                      )}
+                      <p className="text-xs text-gray-500 mt-1">Admin: {debt.admin?.name || 'N/A'}</p>
                       <p className="text-xs text-gray-500 mt-1">
                         {new Date(debt.created_at).toLocaleString('id-ID', {
                           day: '2-digit',
@@ -2143,7 +2078,6 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
         </div>
       </div>
 
-      {/* Paid Debts Section */}
       {paidDebts.length > 0 && (
         <div className="bg-white rounded-xl shadow-md p-6">
           <h2 className="text-2xl font-bold text-gray-800 mb-4">Hutang Pelanggan Lunas</h2>
@@ -2153,9 +2087,7 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
                 <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-800">{debt.customer_name}</p>
                   <p className="text-sm text-gray-600">{debt.customer_phone}</p>
-                  {isSuperadmin && (
-                    <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
-                  )}
+                  <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
                   <p className="text-xs text-gray-500">
                     {new Date(debt.created_at).toLocaleDateString('id-ID')}
                   </p>
@@ -2176,8 +2108,7 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
   );
 };
 
-// Komponen Admins Tab (tanpa welcome card) - Dapat Diakses Semua User
-const AdminsTab = ({ admins, setShowAdminModal, handleDeleteAdmin, getAdminRevenue, currentUser }) => {
+const AdminsTab = ({ admins, setShowAdminModal, handleDeleteAdmin, getAdminRevenue, getTotalDebtAmount, currentUser }) => {
   const isSuperadmin = currentUser.role === 'superadmin';
 
   return (
@@ -2198,7 +2129,7 @@ const AdminsTab = ({ admins, setShowAdminModal, handleDeleteAdmin, getAdminReven
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {admins.map(admin => {
           const revenue = getAdminRevenue(admin.id);
-          const totalDebt = revenue.debt; // Asumsi hutang adalah pendapatan hutang
+          const totalDebt = getTotalDebtAmount(admin.id);
           const status = totalDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
           const statusColor = totalDebt === 0 ? 'text-green-600' : 'text-red-600';
           
@@ -2245,11 +2176,10 @@ const AdminsTab = ({ admins, setShowAdminModal, handleDeleteAdmin, getAdminReven
         })}
       </div>
 
-      {/* Info untuk admin biasa */}
       {!isSuperadmin && (
         <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
           <p className="text-sm text-blue-800">
-            <Info className="h-4 w-4 inline mr-1" />
+            <User className="h-4 w-4 inline mr-1" />
             Anda login sebagai Admin. Hanya Superadmin yang dapat menambah atau menghapus admin.
           </p>
         </div>
@@ -2258,7 +2188,6 @@ const AdminsTab = ({ admins, setShowAdminModal, handleDeleteAdmin, getAdminReven
   );
 };
 
-// Komponen StatCard
 const StatCard = ({ icon, title, value, color, compact = false }) => {
   return (
     <div className={`bg-white rounded-xl shadow-md ${compact ? 'p-3' : 'p-6'}`}>
@@ -2271,7 +2200,6 @@ const StatCard = ({ icon, title, value, color, compact = false }) => {
   );
 };
 
-// Komponen Modal
 const Modal = ({ title, children, onClose, size = 'normal' }) => {
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -2294,22 +2222,5 @@ const Modal = ({ title, children, onClose, size = 'normal' }) => {
     </div>
   );
 };
-
-// Tambahkan komponen Info untuk AdminsTab
-const Info = (props) => (
-  <svg
-    {...props}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="16" x2="12" y2="12" />
-    <line x1="12" y1="8" x2="12.01" y2="8" />
-  </svg>
-);
 
 export default WifiVoucherSalesApp;
