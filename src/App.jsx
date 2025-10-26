@@ -1,5 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Users, Package, DollarSign, FileText, Plus, Eye, Trash2, Edit2, CheckCircle, XCircle, History, Download, Camera } from 'lucide-react';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+// KONFIGURASI SUPABASE - GANTI DENGAN DATA ANDA
+const SUPABASE_URL = 'https://nvfmqhoeigxhbrdyscqz.supabase.co'; // Ganti dengan URL Supabase Anda
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52Zm1xaG9laWd4aGJyZHlzY3F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDk2NTMsImV4cCI6MjA3NzAyNTY1M30.2xfjtHus5q-fXa7pVjkn1zN2648vZxe5gVBgpM-Sx4g'; // Ganti dengan Anon Key Anda
+
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const WifiVoucherSalesApp = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -16,11 +23,11 @@ const WifiVoucherSalesApp = () => {
   const [showDebtPaymentModal, setShowDebtPaymentModal] = useState(false);
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState(null);
-  const [soldVoucher, setSoldVoucher] = useState(null);
+  const [soldVouchers, setSoldVouchers] = useState([]);
 
   // Form states
   const [saleForm, setSaleForm] = useState({
-    voucherCode: '',
+    voucherCodes: [],
     paymentMethod: 'cash',
     customerName: '',
     customerPhone: ''
@@ -39,7 +46,7 @@ const WifiVoucherSalesApp = () => {
   // Ref for voucher card screenshot
   const voucherCardRef = useRef(null);
 
-  // Load data from storage
+  // Load data from database
   useEffect(() => {
     loadData();
   }, []);
@@ -48,167 +55,53 @@ const WifiVoucherSalesApp = () => {
     try {
       setLoading(true);
       
-      // Check if window.storage exists (only in Claude.ai environment)
-      const hasStorage = typeof window.storage !== 'undefined';
+      // Load vouchers
+      const { data: vouchersData, error: vouchersError } = await supabase
+        .from('vouchers')
+        .select('*')
+        .order('code');
       
-      if (!hasStorage) {
-        // Use localStorage for local development
-        console.log('Using localStorage (local development mode)');
-        
-        // Load vouchers
-        const vouchersData = localStorage.getItem('vouchers');
-        if (vouchersData) {
-          setVouchers(JSON.parse(vouchersData));
-        } else {
-          await initializeVouchers();
-        }
+      if (vouchersError) throw vouchersError;
+      setVouchers(vouchersData || []);
 
-        // Load admins
-        const adminsData = localStorage.getItem('admins');
-        if (adminsData) {
-          setAdmins(JSON.parse(adminsData));
-        } else {
-          await initializeAdmins();
-        }
+      // Load admins
+      const { data: adminsData, error: adminsError } = await supabase
+        .from('admins')
+        .select('*');
+      
+      if (adminsError) throw adminsError;
+      setAdmins(adminsData || []);
 
-        // Load sales
-        const salesData = localStorage.getItem('sales');
-        if (salesData) {
-          setSales(JSON.parse(salesData));
-        } else {
-          setSales([]);
-        }
+      // Load sales with admin info
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales')
+        .select(`
+          *,
+          admin:admins(name)
+        `)
+        .order('sold_at', { ascending: false });
+      
+      if (salesError) throw salesError;
+      setSales(salesData || []);
 
-        // Load debts
-        const debtsData = localStorage.getItem('debts');
-        if (debtsData) {
-          setDebts(JSON.parse(debtsData));
-        } else {
-          setDebts([]);
-        }
-      } else {
-        // Use window.storage for Claude.ai environment
-        console.log('Using window.storage (Claude.ai mode)');
-        
-        // Load vouchers
-        try {
-          const vouchersData = await window.storage.get('vouchers');
-          if (vouchersData) {
-            setVouchers(JSON.parse(vouchersData.value));
-          } else {
-            await initializeVouchers();
-          }
-        } catch (error) {
-          await initializeVouchers();
-        }
-
-        // Load admins
-        try {
-          const adminsData = await window.storage.get('admins');
-          if (adminsData) {
-            setAdmins(JSON.parse(adminsData.value));
-          } else {
-            await initializeAdmins();
-          }
-        } catch (error) {
-          await initializeAdmins();
-        }
-
-        // Load sales
-        try {
-          const salesData = await window.storage.get('sales');
-          if (salesData) {
-            setSales(JSON.parse(salesData.value));
-          }
-        } catch (error) {
-          setSales([]);
-        }
-
-        // Load debts
-        try {
-          const debtsData = await window.storage.get('debts');
-          if (debtsData) {
-            setDebts(JSON.parse(debtsData.value));
-          }
-        } catch (error) {
-          setDebts([]);
-        }
-      }
+      // Load debts with admin info
+      const { data: debtsData, error: debtsError } = await supabase
+        .from('debts')
+        .select(`
+          *,
+          admin:admins(name),
+          payments:debt_payments(*)
+        `)
+        .order('created_at', { ascending: false });
+      
+      if (debtsError) throw debtsError;
+      setDebts(debtsData || []);
 
       setLoading(false);
     } catch (error) {
       console.error('Error loading data:', error);
+      alert('Gagal memuat data: ' + error.message);
       setLoading(false);
-    }
-  };
-
-  const initializeVouchers = async () => {
-    const voucherData = [
-      "6827", "6456", "5756", "5383", "5966", "2382", "9852", "8335", "5879", "8532",
-      "5279", "3882", "8588", "4536", "5468", "4327", "7662", "2925", "9895", "8298",
-      "3946", "8469", "7554", "4496", "3722", "7827", "9298", "2332", "8289", "2528",
-      "9265", "6997", "2677", "9673", "8865", "9979", "4966", "3929", "9835", "5484",
-      "2446", "8893", "7594", "2597", "7946", "3645", "5277", "4388", "3452", "8547",
-      "4426", "5663", "2987", "5728", "7433", "9493", "8845", "5434", "9867", "2293",
-      "6629", "3526", "2754", "2875", "4554", "9378", "2954", "6977", "9263", "5859",
-      "5926", "4289", "5526", "5527", "5775", "3248", "3347", "3294", "5968", "4635",
-      "2474", "5727", "7355", "9229", "4247", "5935", "5785", "4924", "2753", "4379"
-    ];
-
-    const initialVouchers = voucherData.map((code, idx) => ({
-      id: `voucher_${idx + 1}`,
-      code: code,
-      username: code,
-      password: code,
-      status: 'available',
-      soldBy: null,
-      soldAt: null
-    }));
-
-    setVouchers(initialVouchers);
-    
-    // Save based on environment
-    if (typeof window.storage !== 'undefined') {
-      await window.storage.set('vouchers', JSON.stringify(initialVouchers));
-    } else {
-      localStorage.setItem('vouchers', JSON.stringify(initialVouchers));
-    }
-    
-    console.log('Vouchers initialized:', initialVouchers.length);
-  };
-
-  const initializeAdmins = async () => {
-    const superadmin = {
-      id: 'admin_0',
-      name: 'Superadmin',
-      username: 'superadmin',
-      password: 'admin123',
-      role: 'superadmin'
-    };
-    
-    const initialAdmins = [superadmin];
-    setAdmins(initialAdmins);
-    
-    // Save based on environment
-    if (typeof window.storage !== 'undefined') {
-      await window.storage.set('admins', JSON.stringify(initialAdmins));
-    } else {
-      localStorage.setItem('admins', JSON.stringify(initialAdmins));
-    }
-    
-    console.log('Admins initialized:', initialAdmins);
-  };
-
-  const saveData = async (key, data) => {
-    try {
-      if (typeof window.storage !== 'undefined') {
-        await window.storage.set(key, JSON.stringify(data));
-      } else {
-        localStorage.setItem(key, JSON.stringify(data));
-      }
-      console.log(`Saved ${key}:`, data);
-    } catch (error) {
-      console.error(`Error saving ${key}:`, error);
     }
   };
 
@@ -232,40 +125,53 @@ const WifiVoucherSalesApp = () => {
       return;
     }
 
-    const newAdmin = {
-      id: `admin_${Date.now()}`,
-      name: adminForm.name,
-      username: adminForm.username,
-      password: adminForm.password,
-      role: 'admin'
-    };
+    try {
+      const { data, error } = await supabase
+        .from('admins')
+        .insert([
+          {
+            name: adminForm.name,
+            username: adminForm.username,
+            password: adminForm.password,
+            role: 'admin'
+          }
+        ])
+        .select();
 
-    const updatedAdmins = [...admins, newAdmin];
-    setAdmins(updatedAdmins);
-    await saveData('admins', updatedAdmins);
+      if (error) throw error;
 
-    setAdminForm({ name: '', username: '', password: '' });
-    setShowAdminModal(false);
-    alert('Admin berhasil ditambahkan!');
+      setAdmins([...admins, data[0]]);
+      setAdminForm({ name: '', username: '', password: '' });
+      setShowAdminModal(false);
+      alert('Admin berhasil ditambahkan!');
+    } catch (error) {
+      console.error('Error adding admin:', error);
+      alert('Gagal menambahkan admin: ' + error.message);
+    }
   };
 
   const handleDeleteAdmin = async (adminId) => {
     if (!window.confirm('Yakin ingin menghapus admin ini?')) return;
     
-    const updatedAdmins = admins.filter(a => a.id !== adminId);
-    setAdmins(updatedAdmins);
-    await saveData('admins', updatedAdmins);
+    try {
+      const { error } = await supabase
+        .from('admins')
+        .delete()
+        .eq('id', adminId);
+
+      if (error) throw error;
+
+      setAdmins(admins.filter(a => a.id !== adminId));
+      alert('Admin berhasil dihapus!');
+    } catch (error) {
+      console.error('Error deleting admin:', error);
+      alert('Gagal menghapus admin: ' + error.message);
+    }
   };
 
   const handleSellVoucher = async () => {
-    if (!saleForm.voucherCode) {
-      alert('Pilih voucher terlebih dahulu!');
-      return;
-    }
-
-    const voucher = vouchers.find(v => v.code === saleForm.voucherCode && v.status === 'available');
-    if (!voucher) {
-      alert('Voucher tidak tersedia!');
+    if (saleForm.voucherCodes.length === 0) {
+      alert('Pilih minimal 1 voucher!');
       return;
     }
 
@@ -274,65 +180,88 @@ const WifiVoucherSalesApp = () => {
       return;
     }
 
-    const saleId = `sale_${Date.now()}`;
-    const newSale = {
-      id: saleId,
-      voucherCode: voucher.code,
-      voucherUsername: voucher.username,
-      voucherPassword: voucher.password,
-      amount: 1000,
-      paymentMethod: saleForm.paymentMethod,
-      soldBy: currentUser.id,
-      soldByName: currentUser.name,
-      customerName: saleForm.customerName || '-',
-      customerPhone: saleForm.customerPhone || '-',
-      soldAt: new Date().toISOString()
-    };
+    try {
+      const selectedVouchers = vouchers.filter(v => 
+        saleForm.voucherCodes.includes(v.code) && v.status === 'available'
+      );
 
-    const updatedSales = [...sales, newSale];
-    setSales(updatedSales);
-    await saveData('sales', updatedSales);
+      if (selectedVouchers.length === 0) {
+        alert('Voucher tidak tersedia!');
+        return;
+      }
 
-    const updatedVouchers = vouchers.map(v => 
-      v.code === voucher.code 
-        ? { ...v, status: 'sold', soldBy: currentUser.id, soldAt: new Date().toISOString() }
-        : v
-    );
-    setVouchers(updatedVouchers);
-    await saveData('vouchers', updatedVouchers);
+      const totalAmount = selectedVouchers.length * 1000;
+      const soldAt = new Date().toISOString();
 
-    if (saleForm.paymentMethod === 'hutang') {
-      const newDebt = {
-        id: `debt_${Date.now()}`,
-        saleId: saleId,
-        customerName: saleForm.customerName,
-        customerPhone: saleForm.customerPhone,
+      // Insert sales records
+      const salesRecords = selectedVouchers.map(voucher => ({
+        voucher_code: voucher.code,
+        voucher_username: voucher.username,
+        voucher_password: voucher.password,
         amount: 1000,
-        paid: 0,
-        remaining: 1000,
-        status: 'unpaid',
-        adminId: currentUser.id,
-        adminName: currentUser.name,
-        createdAt: new Date().toISOString(),
-        payments: []
-      };
+        payment_method: saleForm.paymentMethod,
+        sold_by: currentUser.id,
+        customer_name: saleForm.customerName || '-',
+        customer_phone: saleForm.customerPhone || '-',
+        sold_at: soldAt
+      }));
 
-      const updatedDebts = [...debts, newDebt];
-      setDebts(updatedDebts);
-      await saveData('debts', updatedDebts);
+      const { data: salesData, error: salesError } = await supabase
+        .from('sales')
+        .insert(salesRecords)
+        .select();
+
+      if (salesError) throw salesError;
+
+      // Update vouchers status
+      const { error: updateError } = await supabase
+        .from('vouchers')
+        .update({
+          status: 'sold',
+          sold_by: currentUser.id,
+          sold_at: soldAt
+        })
+        .in('code', saleForm.voucherCodes);
+
+      if (updateError) throw updateError;
+
+      // If hutang, create debt record
+      if (saleForm.paymentMethod === 'hutang') {
+        const { error: debtError } = await supabase
+          .from('debts')
+          .insert([{
+            sale_ids: salesData.map(s => s.id),
+            customer_name: saleForm.customerName,
+            customer_phone: saleForm.customerPhone,
+            amount: totalAmount,
+            paid: 0,
+            remaining: totalAmount,
+            status: 'unpaid',
+            admin_id: currentUser.id
+          }]);
+
+        if (debtError) throw debtError;
+      }
+
+      // Reload data
+      await loadData();
+
+      // Show voucher display
+      setSoldVouchers(selectedVouchers.map(v => ({
+        username: v.username,
+        password: v.password,
+        customerName: saleForm.customerName || 'Pelanggan',
+        soldAt: soldAt
+      })));
+      setShowVoucherDisplay(true);
+      setShowSaleModal(false);
+
+      setSaleForm({ voucherCodes: [], paymentMethod: 'cash', customerName: '', customerPhone: '' });
+      alert('Penjualan berhasil!');
+    } catch (error) {
+      console.error('Error selling voucher:', error);
+      alert('Gagal melakukan penjualan: ' + error.message);
     }
-
-    // Show voucher display
-    setSoldVoucher({
-      username: voucher.username,
-      password: voucher.password,
-      customerName: saleForm.customerName || 'Pelanggan',
-      soldAt: new Date().toISOString()
-    });
-    setShowVoucherDisplay(true);
-    setShowSaleModal(false);
-
-    setSaleForm({ voucherCode: '', paymentMethod: 'cash', customerName: '', customerPhone: '' });
   };
 
   const handlePayDebt = async () => {
@@ -346,42 +275,52 @@ const WifiVoucherSalesApp = () => {
       return;
     }
 
-    const payment = {
-      id: `payment_${Date.now()}`,
-      amount: debtPaymentForm.amount,
-      paidAt: new Date().toISOString(),
-      receivedBy: currentUser.name
-    };
+    try {
+      const newPaid = selectedDebt.paid + debtPaymentForm.amount;
+      const newRemaining = selectedDebt.remaining - debtPaymentForm.amount;
+      const newStatus = newRemaining === 0 ? 'paid' : 'partial';
 
-    const updatedDebts = debts.map(d => {
-      if (d.id === selectedDebt.id) {
-        const newPaid = d.paid + debtPaymentForm.amount;
-        const newRemaining = d.remaining - debtPaymentForm.amount;
-        return {
-          ...d,
+      // Insert payment record
+      const { error: paymentError } = await supabase
+        .from('debt_payments')
+        .insert([{
+          debt_id: selectedDebt.id,
+          amount: debtPaymentForm.amount,
+          received_by: currentUser.name,
+          paid_at: new Date().toISOString()
+        }]);
+
+      if (paymentError) throw paymentError;
+
+      // Update debt
+      const { error: updateError } = await supabase
+        .from('debts')
+        .update({
           paid: newPaid,
           remaining: newRemaining,
-          status: newRemaining === 0 ? 'paid' : 'partial',
-          payments: [...d.payments, payment]
-        };
-      }
-      return d;
-    });
+          status: newStatus
+        })
+        .eq('id', selectedDebt.id);
 
-    setDebts(updatedDebts);
-    await saveData('debts', updatedDebts);
+      if (updateError) throw updateError;
 
-    setDebtPaymentForm({ amount: 0 });
-    setSelectedDebt(null);
-    setShowDebtPaymentModal(false);
-    alert('Pembayaran berhasil dicatat!');
+      // Reload data
+      await loadData();
+
+      setDebtPaymentForm({ amount: 0 });
+      setSelectedDebt(null);
+      setShowDebtPaymentModal(false);
+      alert('Pembayaran berhasil dicatat!');
+    } catch (error) {
+      console.error('Error paying debt:', error);
+      alert('Gagal mencatat pembayaran: ' + error.message);
+    }
   };
 
   const handleScreenshotVoucher = async () => {
     if (!voucherCardRef.current) return;
 
     try {
-      // Import html2canvas dynamically
       const html2canvas = (await import('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js')).default;
       
       const canvas = await html2canvas(voucherCardRef.current, {
@@ -390,7 +329,7 @@ const WifiVoucherSalesApp = () => {
       });
       
       const link = document.createElement('a');
-      link.download = `voucher-${soldVoucher.username}.png`;
+      link.download = `vouchers-${new Date().getTime()}.png`;
       link.href = canvas.toDataURL();
       link.click();
     } catch (error) {
@@ -399,17 +338,26 @@ const WifiVoucherSalesApp = () => {
     }
   };
 
+  const toggleVoucherSelection = (code) => {
+    setSaleForm(prev => ({
+      ...prev,
+      voucherCodes: prev.voucherCodes.includes(code)
+        ? prev.voucherCodes.filter(c => c !== code)
+        : [...prev.voucherCodes, code]
+    }));
+  };
+
   const getAdminSales = (adminId) => {
-    return sales.filter(s => s.soldBy === adminId);
+    return sales.filter(s => s.sold_by === adminId);
   };
 
   const getAdminDebts = (adminId) => {
-    return debts.filter(d => d.adminId === adminId);
+    return debts.filter(d => d.admin_id === adminId);
   };
 
   const getTotalRevenue = (adminId = null) => {
     const relevantSales = adminId ? getAdminSales(adminId) : sales;
-    return relevantSales.filter(s => s.paymentMethod === 'cash').reduce((sum, s) => sum + s.amount, 0);
+    return relevantSales.filter(s => s.payment_method === 'cash').reduce((sum, s) => sum + s.amount, 0);
   };
 
   const getTotalDebtAmount = (adminId = null) => {
@@ -538,6 +486,7 @@ const WifiVoucherSalesApp = () => {
             setSaleForm={setSaleForm}
             handleSellVoucher={handleSellVoucher}
             getAvailableVouchers={getAvailableVouchers}
+            toggleVoucherSelection={toggleVoucherSelection}
           />
         )}
 
@@ -609,42 +558,48 @@ const WifiVoucherSalesApp = () => {
         </Modal>
       )}
 
-      {showVoucherDisplay && soldVoucher && (
+      {showVoucherDisplay && soldVouchers.length > 0 && (
         <Modal 
           title="Voucher Berhasil Dijual!" 
           onClose={() => setShowVoucherDisplay(false)}
         >
           <div className="space-y-4">
-            <div ref={voucherCardRef} className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-8 text-white">
-              <div className="text-center mb-6">
-                <div className="bg-white bg-opacity-20 rounded-full w-20 h-20 flex items-center justify-center mx-auto mb-4">
-                  <Package className="h-10 w-10" />
-                </div>
-                <h2 className="text-2xl font-bold">Voucher WiFi</h2>
-                <p className="text-indigo-100">HARIAN-OGROG</p>
-              </div>
-
-              <div className="bg-white bg-opacity-20 rounded-xl p-6 mb-4 backdrop-blur-sm">
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-indigo-100 text-sm mb-1">Username</p>
-                    <p className="text-3xl font-bold font-mono tracking-wider">{soldVoucher.username}</p>
+            <div ref={voucherCardRef} className="space-y-4">
+              {soldVouchers.map((voucher, idx) => (
+                <div key={idx} className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl p-6 text-white">
+                  <div className="text-center mb-4">
+                    <div className="bg-white bg-opacity-20 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-3">
+                      <Package className="h-8 w-8" />
+                    </div>
+                    <h2 className="text-xl font-bold">Voucher WiFi #{idx + 1}</h2>
+                    <p className="text-indigo-100">HARIAN-OGROG</p>
                   </div>
-                  <div>
-                    <p className="text-indigo-100 text-sm mb-1">Password</p>
-                    <p className="text-3xl font-bold font-mono tracking-wider">{soldVoucher.password}</p>
+
+                  <div className="bg-white bg-opacity-20 rounded-xl p-4 mb-3 backdrop-blur-sm">
+                    <div className="space-y-3">
+                      <div>
+                        <p className="text-indigo-100 text-xs mb-1">Username</p>
+                        <p className="text-2xl font-bold font-mono tracking-wider">{voucher.username}</p>
+                      </div>
+                      <div>
+                        <p className="text-indigo-100 text-xs mb-1">Password</p>
+                        <p className="text-2xl font-bold font-mono tracking-wider">{voucher.password}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="text-center text-xs text-indigo-100">
+                    <p>Untuk: {voucher.customerName}</p>
+                    <p className="mt-1">{new Date(voucher.soldAt).toLocaleDateString('id-ID', {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}</p>
                   </div>
                 </div>
-              </div>
-
-              <div className="text-center text-sm text-indigo-100">
-                <p>Untuk: {soldVoucher.customerName}</p>
-                <p className="mt-2">{new Date(soldVoucher.soldAt).toLocaleDateString('id-ID', {
-                  day: '2-digit',
-                  month: 'long',
-                  year: 'numeric'
-                })}</p>
-              </div>
+              ))}
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -676,8 +631,8 @@ const WifiVoucherSalesApp = () => {
         <Modal title="Bayar Hutang" onClose={() => setShowDebtPaymentModal(false)}>
           <div className="space-y-4">
             <div className="bg-gray-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600">Pelanggan: <strong>{selectedDebt.customerName}</strong></p>
-              <p className="text-sm text-gray-600">Telepon: <strong>{selectedDebt.customerPhone}</strong></p>
+              <p className="text-sm text-gray-600">Pelanggan: <strong>{selectedDebt.customer_name}</strong></p>
+              <p className="text-sm text-gray-600">Telepon: <strong>{selectedDebt.customer_phone}</strong></p>
               <p className="text-sm text-gray-600">Total Hutang: <strong>Rp {selectedDebt.amount.toLocaleString('id-ID')}</strong></p>
               <p className="text-sm text-gray-600">Sudah Dibayar: <strong>Rp {selectedDebt.paid.toLocaleString('id-ID')}</strong></p>
               <p className="text-lg font-bold text-red-600 mt-2">Sisa: Rp {selectedDebt.remaining.toLocaleString('id-ID')}</p>
@@ -755,10 +710,6 @@ const LoginPage = ({ onLogin }) => {
             Login
           </button>
         </form>
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-          <p className="text-xs text-gray-600 text-center">
-          </p>
-        </div>
       </div>
     </div>
   );
@@ -818,7 +769,7 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
               <tbody>
                 {admins.filter(a => a.role === 'admin').map(admin => {
                   const adminSales = getAdminSales(admin.id);
-                  const adminRevenue = adminSales.filter(s => s.paymentMethod === 'cash').reduce((sum, s) => sum + s.amount, 0);
+                  const adminRevenue = adminSales.filter(s => s.payment_method === 'cash').reduce((sum, s) => sum + s.amount, 0);
                   const adminDebts = getAdminDebts(admin.id);
                   const adminDebtTotal = adminDebts.reduce((sum, d) => sum + d.remaining, 0);
                   
@@ -845,23 +796,28 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
         <h3 className="text-xl font-bold text-gray-800 mb-4">Penjualan Terbaru</h3>
         <div className="space-y-3">
           {(isSuperadmin ? sales : getAdminSales(currentUser.id))
-            .slice(-5)
-            .reverse()
+            .slice(0, 5)
             .map(sale => (
               <div key={sale.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                 <div>
-                  <p className="font-medium text-gray-800">Voucher: {sale.voucherCode}</p>
+                  <p className="font-medium text-gray-800">Voucher: {sale.voucher_code}</p>
                   <p className="text-sm text-gray-600">
-                    {sale.paymentMethod === 'cash' ? '💵 Cash' : '📋 Hutang'} • {sale.soldByName}
+                    {sale.payment_method === 'cash' ? '💵 Cash' : '📋 Hutang'} • {sale.admin?.name || 'N/A'}
                   </p>
                   <p className="text-xs text-gray-500">
-                    {new Date(sale.soldAt).toLocaleString('id-ID')}
+                    {new Date(sale.sold_at).toLocaleString('id-ID', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit'
+                    })}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-green-600">Rp {sale.amount.toLocaleString('id-ID')}</p>
-                  {sale.customerName !== '-' && (
-                    <p className="text-xs text-gray-600">{sale.customerName}</p>
+                  {sale.customer_name !== '-' && (
+                    <p className="text-xs text-gray-600">{sale.customer_name}</p>
                   )}
                 </div>
               </div>
@@ -875,30 +831,56 @@ const DashboardTab = ({ currentUser, vouchers, sales, debts, admins, getTotalRev
   );
 };
 
-const SellTab = ({ vouchers, saleForm, setSaleForm, handleSellVoucher, getAvailableVouchers }) => {
+const SellTab = ({ vouchers, saleForm, setSaleForm, handleSellVoucher, getAvailableVouchers, toggleVoucherSelection }) => {
   const availableVouchers = getAvailableVouchers();
+  const totalAmount = saleForm.voucherCodes.length * 1000;
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 max-w-2xl mx-auto">
+    <div className="bg-white rounded-xl shadow-md p-6 max-w-4xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Jual Voucher</h2>
       
       <div className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Pilih Voucher ({availableVouchers.length} tersedia)
+            Pilih Voucher ({availableVouchers.length} tersedia) - Dipilih: {saleForm.voucherCodes.length}
           </label>
-          <select
-            value={saleForm.voucherCode}
-            onChange={(e) => setSaleForm({ ...saleForm, voucherCode: e.target.value })}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">-- Pilih Voucher --</option>
+          <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
             {availableVouchers.map(v => (
-              <option key={v.id} value={v.code}>
-                {v.code} (Username & Password: {v.username})
-              </option>
+              <div
+                key={v.id}
+                onClick={() => toggleVoucherSelection(v.code)}
+                className={`p-3 rounded-lg cursor-pointer transition ${
+                  saleForm.voucherCodes.includes(v.code)
+                    ? 'bg-indigo-100 border-2 border-indigo-500'
+                    : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-medium text-gray-800">{v.code}</p>
+                    <p className="text-sm text-gray-600">Username & Password: {v.username}</p>
+                  </div>
+                  {saleForm.voucherCodes.includes(v.code) && (
+                    <CheckCircle className="h-6 w-6 text-indigo-600" />
+                  )}
+                </div>
+              </div>
             ))}
-          </select>
+            {availableVouchers.length === 0 && (
+              <p className="text-center text-gray-500 py-4">Tidak ada voucher tersedia</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Nama Pelanggan</label>
+          <input
+            type="text"
+            value={saleForm.customerName}
+            onChange={(e) => setSaleForm({ ...saleForm, customerName: e.target.value })}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+            placeholder="Masukkan nama pelanggan"
+          />
         </div>
 
         <div>
@@ -928,18 +910,8 @@ const SellTab = ({ vouchers, saleForm, setSaleForm, handleSellVoucher, getAvaila
         </div>
 
         {saleForm.paymentMethod === 'hutang' && (
-          <div className="space-y-4 p-4 bg-red-50 rounded-lg border border-red-200">
-            <p className="text-sm font-medium text-red-800">Data pelanggan diperlukan untuk pembayaran hutang</p>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nama Pelanggan</label>
-              <input
-                type="text"
-                value={saleForm.customerName}
-                onChange={(e) => setSaleForm({ ...saleForm, customerName: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                placeholder="Masukkan nama pelanggan"
-              />
-            </div>
+          <div className="p-4 bg-red-50 rounded-lg border border-red-200">
+            <p className="text-sm font-medium text-red-800 mb-3">Nomor telepon diperlukan untuk pembayaran hutang</p>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nomor Telepon</label>
               <input
@@ -954,15 +926,25 @@ const SellTab = ({ vouchers, saleForm, setSaleForm, handleSellVoucher, getAvaila
         )}
 
         <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="flex justify-between items-center">
-            <span className="text-lg font-medium text-gray-700">Total Harga:</span>
-            <span className="text-2xl font-bold text-indigo-600">Rp 1.000</span>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-gray-700">Jumlah Voucher:</span>
+            <span className="font-bold text-gray-800">{saleForm.voucherCodes.length}</span>
+          </div>
+          <div className="flex justify-between items-center mb-2">
+            <span className="text-gray-700">Harga per Voucher:</span>
+            <span className="font-medium text-gray-800">Rp 1.000</span>
+          </div>
+          <div className="border-t border-gray-300 pt-2 mt-2">
+            <div className="flex justify-between items-center">
+              <span className="text-lg font-medium text-gray-700">Total Harga:</span>
+              <span className="text-2xl font-bold text-indigo-600">Rp {totalAmount.toLocaleString('id-ID')}</span>
+            </div>
           </div>
         </div>
 
         <button
           onClick={handleSellVoucher}
-          disabled={!saleForm.voucherCode}
+          disabled={saleForm.voucherCodes.length === 0}
           className="w-full px-6 py-3 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition disabled:bg-gray-300 disabled:cursor-not-allowed"
         >
           Proses Penjualan
@@ -990,7 +972,7 @@ const SalesTab = ({ currentUser, sales, admins, getAdminSales }) => {
           <table className="w-full">
             <thead>
               <tr className="border-b-2 border-gray-200">
-                <th className="text-left py-3 px-4 font-semibold text-gray-700">Tanggal</th>
+                <th className="text-left py-3 px-4 font-semibold text-gray-700">Tanggal & Jam</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Voucher</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Username/Password</th>
                 {isSuperadmin && (
@@ -1002,10 +984,10 @@ const SalesTab = ({ currentUser, sales, admins, getAdminSales }) => {
               </tr>
             </thead>
             <tbody>
-              {displaySales.slice().reverse().map(sale => (
+              {displaySales.map(sale => (
                 <tr key={sale.id} className="border-b border-gray-100 hover:bg-gray-50">
                   <td className="py-3 px-4 text-sm">
-                    {new Date(sale.soldAt).toLocaleDateString('id-ID', {
+                    {new Date(sale.sold_at).toLocaleString('id-ID', {
                       day: '2-digit',
                       month: 'short',
                       year: 'numeric',
@@ -1013,25 +995,25 @@ const SalesTab = ({ currentUser, sales, admins, getAdminSales }) => {
                       minute: '2-digit'
                     })}
                   </td>
-                  <td className="py-3 px-4 font-medium">{sale.voucherCode}</td>
-                  <td className="py-3 px-4 font-mono text-sm bg-gray-50 rounded">{sale.voucherUsername}</td>
+                  <td className="py-3 px-4 font-medium">{sale.voucher_code}</td>
+                  <td className="py-3 px-4 font-mono text-sm bg-gray-50 rounded">{sale.voucher_username}</td>
                   {isSuperadmin && (
-                    <td className="py-3 px-4">{sale.soldByName}</td>
+                    <td className="py-3 px-4">{sale.admin?.name || 'N/A'}</td>
                   )}
                   <td className="py-3 px-4">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      sale.paymentMethod === 'cash'
+                      sale.payment_method === 'cash'
                         ? 'bg-green-100 text-green-700'
                         : 'bg-red-100 text-red-700'
                     }`}>
-                      {sale.paymentMethod === 'cash' ? '💵 Cash' : '📋 Hutang'}
+                      {sale.payment_method === 'cash' ? '💵 Cash' : '📋 Hutang'}
                     </span>
                   </td>
                   <td className="py-3 px-4 text-sm">
-                    {sale.customerName !== '-' ? (
+                    {sale.customer_name !== '-' ? (
                       <div>
-                        <p className="font-medium">{sale.customerName}</p>
-                        <p className="text-gray-500 text-xs">{sale.customerPhone}</p>
+                        <p className="font-medium">{sale.customer_name}</p>
+                        <p className="text-gray-500 text-xs">{sale.customer_phone}</p>
                       </div>
                     ) : (
                       <span className="text-gray-400">-</span>
@@ -1072,11 +1054,20 @@ const DebtsTab = ({ currentUser, debts, getAdminDebts, setSelectedDebt, setShowD
               <div key={debt.id} className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <h3 className="font-bold text-gray-800">{debt.customerName}</h3>
-                    <p className="text-sm text-gray-600">{debt.customerPhone}</p>
+                    <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
+                    <p className="text-sm text-gray-600">{debt.customer_phone}</p>
                     {isSuperadmin && (
-                      <p className="text-xs text-gray-500 mt-1">Admin: {debt.adminName}</p>
+                      <p className="text-xs text-gray-500 mt-1">Admin: {debt.admin?.name || 'N/A'}</p>
                     )}
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(debt.created_at).toLocaleString('id-ID', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </p>
                   </div>
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     debt.status === 'unpaid'
@@ -1114,7 +1105,7 @@ const DebtsTab = ({ currentUser, debts, getAdminDebts, setSelectedDebt, setShowD
                   </p>
                 </div>
 
-                {debt.payments.length > 0 && (
+                {debt.payments && debt.payments.length > 0 && (
                   <div className="mb-3">
                     <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
                     <div className="space-y-1 max-h-24 overflow-y-auto">
@@ -1123,10 +1114,10 @@ const DebtsTab = ({ currentUser, debts, getAdminDebts, setSelectedDebt, setShowD
                           <div className="flex justify-between">
                             <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
                             <span className="text-gray-500">
-                              {new Date(payment.paidAt).toLocaleDateString('id-ID')}
+                              {new Date(payment.paid_at).toLocaleDateString('id-ID')}
                             </span>
                           </div>
-                          <p className="text-gray-500">Diterima: {payment.receivedBy}</p>
+                          <p className="text-gray-500">Diterima: {payment.received_by}</p>
                         </div>
                       ))}
                     </div>
@@ -1155,11 +1146,14 @@ const DebtsTab = ({ currentUser, debts, getAdminDebts, setSelectedDebt, setShowD
             {paidDebts.map(debt => (
               <div key={debt.id} className="flex justify-between items-center p-3 bg-green-50 rounded-lg border border-green-200">
                 <div>
-                  <p className="font-medium text-gray-800">{debt.customerName}</p>
-                  <p className="text-sm text-gray-600">{debt.customerPhone}</p>
+                  <p className="font-medium text-gray-800">{debt.customer_name}</p>
+                  <p className="text-sm text-gray-600">{debt.customer_phone}</p>
                   {isSuperadmin && (
-                    <p className="text-xs text-gray-500">Admin: {debt.adminName}</p>
+                    <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
                   )}
+                  <p className="text-xs text-gray-500">
+                    {new Date(debt.created_at).toLocaleDateString('id-ID')}
+                  </p>
                 </div>
                 <div className="text-right">
                   <p className="font-bold text-green-600">Rp {debt.amount.toLocaleString('id-ID')}</p>
