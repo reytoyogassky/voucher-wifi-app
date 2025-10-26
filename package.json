@@ -1,0 +1,25 @@
+{
+  "name": "voucher-wifi-sales",
+  "version": "1.0.0",
+  "description": "Sistem Penjualan Voucher WiFi",
+  "private": true,
+  "homepage": "https://reytoyogassky.github.io/voucher-wifi-app/",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "predeploy": "npm run build",
+    "deploy": "gh-pages -d dist"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "lucide-react": "^0.263.1",
+    "html2canvas": "^1.4.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.0",
+    "vite": "^4.3.9",
+    "gh-pages": "^6.1.0"
+  }
+}
