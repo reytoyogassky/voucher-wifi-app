@@ -358,8 +358,15 @@ const WifiVoucherSalesApp = () => {
       return;
     }
 
-    if (saleForm.paymentMethod === 'hutang' && (!saleForm.customerName || !saleForm.customerPhone)) {
-      alert('Nama dan nomor telepon pelanggan harus diisi untuk pembayaran hutang!');
+    // VALIDASI NAMA PEMBELI WAJIB DIISI - untuk semua metode pembayaran
+    if (!saleForm.customerName.trim()) {
+      alert('Nama pelanggan harus diisi!');
+      return;
+    }
+
+    // Untuk pembayaran hutang, nomor telepon juga wajib
+    if (saleForm.paymentMethod === 'hutang' && (!saleForm.customerPhone || !saleForm.customerPhone.trim())) {
+      alert('Nomor telepon pelanggan harus diisi untuk pembayaran hutang!');
       return;
     }
 
@@ -1890,7 +1897,7 @@ const DashboardTab = ({
   );
 };
 
-// Komponen Sell Tab
+// Komponen Sell Tab dengan Tampilan Voucher yang Lebih Menarik
 const SellTab = ({ 
   vouchers, 
   saleForm, 
@@ -1920,46 +1927,129 @@ const SellTab = ({
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-6 max-w-4xl mx-auto">
+    <div className="bg-white rounded-xl shadow-md p-6 max-w-6xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-800 mb-6">Jual Voucher WiFi</h2>
       
       <div className="space-y-6">
-        {/* Voucher Selection */}
+        {/* Voucher Selection - TAMPILAN BARU YANG LEBIH MENARIK */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Pilih Voucher ({availableVouchers.length} tersedia) - Dipilih: {saleForm.voucherCodes.length}
-          </label>
-          <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+          <div className="flex justify-between items-center mb-4">
+            <label className="block text-lg font-bold text-gray-800">
+              Pilih Voucher ({availableVouchers.length} tersedia)
+            </label>
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-600 font-medium">Dipilih:</span>
+              <span className="bg-purple-600 text-white px-3 py-1 rounded-full text-sm font-bold min-w-8 text-center">
+                {saleForm.voucherCodes.length}
+              </span>
+            </div>
+          </div>
+          
+          {/* Grid Voucher yang Lebih Menarik */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[500px] overflow-y-auto p-4 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
             {availableVouchers.map(v => (
               <div
                 key={v.id}
                 onClick={() => toggleVoucherSelection(v.code)}
-                className={`p-3 rounded-lg cursor-pointer transition ${
-                  saleForm.voucherCodes.includes(v.code)
-                    ? 'bg-purple-100 border-2 border-purple-500'
-                    : 'bg-gray-50 border border-gray-200 hover:bg-gray-100'
-                }`}
+                className={`
+                  relative p-4 rounded-2xl cursor-pointer transition-all duration-300 border-2 min-h-[140px] flex flex-col justify-between
+                  shadow-md hover:shadow-lg
+                  ${saleForm.voucherCodes.includes(v.code)
+                    ? 'bg-gradient-to-br from-purple-500 to-purple-700 text-white border-purple-600 transform scale-105 shadow-xl'
+                    : 'bg-gradient-to-br from-white to-gray-50 border-gray-200 hover:border-purple-300 hover:bg-white'
+                  }
+                `}
               >
-                <div className="flex justify-between items-center">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-800">{v.code}</p>
-                    <p className="text-sm text-gray-600 truncate">Username: {v.username}</p>
-                  </div>
+                {/* Check Indicator */}
+                <div className={`absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center border-2 ${
+                  saleForm.voucherCodes.includes(v.code)
+                    ? 'bg-white text-purple-600 border-white'
+                    : 'bg-white border-gray-300 text-transparent'
+                }`}>
                   {saleForm.voucherCodes.includes(v.code) && (
-                    <CheckCircle className="h-6 w-6 text-purple-600 flex-shrink-0 ml-2" />
+                    <CheckCircle className="h-4 w-4" />
                   )}
                 </div>
+
+                {/* Voucher Content */}
+                <div className="flex-1">
+                  <div className="mb-3">
+                    <p className={`font-bold text-lg mb-2 ${
+                      saleForm.voucherCodes.includes(v.code) ? 'text-white' : 'text-gray-800'
+                    }`}>
+                      {v.code}
+                    </p>
+                    <div className={`text-xs space-y-1 ${
+                      saleForm.voucherCodes.includes(v.code) ? 'text-purple-100' : 'text-gray-600'
+                    }`}>
+                      <div className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        <span className="truncate">{v.username}</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <FileText className="h-3 w-3" />
+                        <span className="truncate">{v.password}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Price Tag */}
+                <div className={`text-right ${
+                  saleForm.voucherCodes.includes(v.code) ? 'text-yellow-300' : 'text-green-600'
+                }`}>
+                  <p className="text-sm font-bold">Rp 1.000</p>
+                </div>
+
+                {/* Selected Overlay Effect */}
+                {saleForm.voucherCodes.includes(v.code) && (
+                  <div className="absolute inset-0 border-2 border-yellow-400 rounded-2xl pointer-events-none animate-pulse"></div>
+                )}
               </div>
             ))}
+            
             {availableVouchers.length === 0 && (
-              <p className="text-center text-gray-500 py-4">Tidak ada voucher tersedia</p>
+              <div className="col-span-full text-center py-12">
+                <Package className="h-20 w-20 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-xl font-semibold">Tidak ada voucher tersedia</p>
+                <p className="text-gray-400 text-sm mt-2">Semua voucher sudah terjual</p>
+              </div>
             )}
           </div>
+
+          {/* Quick Actions */}
+          {availableVouchers.length > 0 && (
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={() => {
+                  const allCodes = availableVouchers.map(v => v.code);
+                  setSaleForm(prev => ({ ...prev, voucherCodes: allCodes }));
+                }}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition flex items-center gap-2 font-medium"
+              >
+                <CheckCircle className="h-4 w-4" />
+                Pilih Semua
+              </button>
+              <button
+                onClick={() => setSaleForm(prev => ({ ...prev, voucherCodes: [] }))}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg text-sm hover:bg-gray-600 transition flex items-center gap-2 font-medium"
+              >
+                <XCircle className="h-4 w-4" />
+                Batal Pilih
+              </button>
+              <div className="flex-1"></div>
+              <div className="text-sm text-gray-600 font-medium">
+                Total: <span className="text-purple-600 font-bold">{saleForm.voucherCodes.length} voucher</span>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Customer Name dengan Autocomplete */}
+        {/* Customer Name dengan Autocomplete - TAMBAH REQUIRED */}
         <div className="relative">
-          <label className="block text-sm font-medium text-gray-700 mb-2">Nama Pelanggan</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Nama Pelanggan <span className="text-red-500">*</span>
+          </label>
           <input
             type="text"
             value={saleForm.customerName}
@@ -1969,23 +2059,24 @@ const SellTab = ({
             }}
             onFocus={() => setShowNameSuggestions(true)}
             onBlur={() => setTimeout(() => setShowNameSuggestions(false), 200)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
-            placeholder="Ketik nama pelanggan atau pilih dari riwayat"
+            className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-base transition"
+            placeholder="Masukkan nama pelanggan (wajib diisi)"
+            required
           />
           
           {showNameSuggestions && nameSuggestions.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-              <div className="p-2 text-xs text-gray-500 border-b border-gray-200">
-                Pilih dari riwayat pelanggan:
+            <div className="absolute z-10 w-full mt-2 bg-white border-2 border-purple-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+              <div className="p-2 text-xs text-purple-600 border-b border-purple-100 bg-purple-50 font-medium">
+                💡 Pilih dari riwayat pelanggan:
               </div>
               {nameSuggestions.map((name, index) => (
                 <div
                   key={index}
                   onClick={() => selectNameSuggestion(name)}
-                  className="px-3 py-2 cursor-pointer hover:bg-purple-50 border-b border-gray-100 last:border-b-0"
+                  className="px-4 py-3 cursor-pointer hover:bg-purple-50 border-b border-gray-100 last:border-b-0 transition"
                 >
                   <div className="font-medium text-gray-800 text-sm">{name}</div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 mt-1">
                     {sales.find(s => s.customer_name === name)?.customer_phone || 'No phone'}
                   </div>
                 </div>
@@ -1994,8 +2085,8 @@ const SellTab = ({
           )}
           
           {customerSuggestions.length > 0 && (
-            <p className="text-xs text-gray-500 mt-1">
-              <User className="h-3 w-3 inline mr-1" />
+            <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
+              <User className="h-3 w-3" />
               {customerSuggestions.length} pelanggan tersedia dalam riwayat
             </p>
           )}
@@ -2003,67 +2094,75 @@ const SellTab = ({
 
         {/* Payment Method */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Metode Pembayaran</label>
-          <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm font-medium text-gray-700 mb-3">Metode Pembayaran</label>
+          <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => setSaleForm({ ...saleForm, paymentMethod: 'cash' })}
-              className={`p-4 border-2 rounded-lg font-medium transition ${
+              className={`p-4 border-2 rounded-xl font-medium transition-all duration-200 flex items-center justify-center gap-3 ${
                 saleForm.paymentMethod === 'cash'
-                  ? 'border-green-500 bg-green-50 text-green-700'
-                  : 'border-gray-300 hover:border-gray-400'
+                  ? 'border-green-500 bg-green-50 text-green-700 shadow-md scale-105'
+                  : 'border-gray-300 hover:border-gray-400 bg-white hover:shadow-sm'
               }`}
             >
-              <DollarSign className="h-5 w-5 inline mr-2" />
-              Cash
+              <div className={`p-2 rounded-lg ${
+                saleForm.paymentMethod === 'cash' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-600'
+              }`}>
+                <DollarSign className="h-5 w-5" />
+              </div>
+              <span className="font-semibold">Cash</span>
             </button>
             <button
               onClick={() => setSaleForm({ ...saleForm, paymentMethod: 'hutang' })}
-              className={`p-4 border-2 rounded-lg font-medium transition ${
+              className={`p-4 border-2 rounded-xl font-medium transition-all duration-200 flex items-center justify-center gap-3 ${
                 saleForm.paymentMethod === 'hutang'
-                  ? 'border-red-500 bg-red-50 text-red-700'
-                  : 'border-gray-300 hover:border-gray-400'
+                  ? 'border-red-500 bg-red-50 text-red-700 shadow-md scale-105'
+                  : 'border-gray-300 hover:border-gray-400 bg-white hover:shadow-sm'
               }`}
             >
-              <FileText className="h-5 w-5 inline mr-2" />
-              Hutang
+              <div className={`p-2 rounded-lg ${
+                saleForm.paymentMethod === 'hutang' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'
+              }`}>
+                <FileText className="h-5 w-5" />
+              </div>
+              <span className="font-semibold">Hutang</span>
             </button>
           </div>
         </div>
 
         {/* Phone Number untuk Hutang */}
         {saleForm.paymentMethod === 'hutang' && (
-          <div className="p-4 bg-red-50 rounded-lg border border-red-200">
-            <p className="text-sm font-medium text-red-800 mb-3">
-              <Phone className="h-4 w-4 inline mr-1" />
+          <div className="p-4 bg-red-50 rounded-xl border-2 border-red-200">
+            <p className="text-sm font-medium text-red-800 mb-3 flex items-center gap-2">
+              <Phone className="h-4 w-4" />
               Nomor telepon diperlukan untuk pembayaran hutang
             </p>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nomor Telepon</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nomor Telepon</label>
               <input
                 type="tel"
                 value={saleForm.customerPhone}
                 onChange={(e) => setSaleForm({ ...saleForm, customerPhone: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-base transition"
                 placeholder="08xxxxxxxxxx"
               />
             </div>
           </div>
         )}
 
-        {/* Total Amount */}
-        <div className="bg-gray-50 p-4 rounded-lg">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-gray-700">Jumlah Voucher:</span>
-            <span className="font-bold text-gray-800">{saleForm.voucherCodes.length}</span>
+        {/* Total Amount - TAMPILAN LEBIH BESAR */}
+        <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-6 rounded-2xl border-2 border-purple-200">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-gray-700 text-lg font-medium">Jumlah Voucher:</span>
+            <span className="font-bold text-gray-800 text-xl">{saleForm.voucherCodes.length}</span>
           </div>
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-gray-700">Harga per Voucher:</span>
-            <span className="font-medium text-gray-800">Rp 1.000</span>
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-gray-700 text-lg font-medium">Harga per Voucher:</span>
+            <span className="font-bold text-gray-800 text-xl">Rp 1.000</span>
           </div>
-          <div className="border-t border-gray-300 pt-2 mt-2">
+          <div className="border-t-2 border-purple-300 pt-4 mt-2">
             <div className="flex justify-between items-center">
-              <span className="text-lg font-medium text-gray-700">Total Harga:</span>
-              <span className="text-2xl font-bold text-purple-600">Rp {totalAmount.toLocaleString('id-ID')}</span>
+              <span className="text-xl font-bold text-gray-800">Total Harga:</span>
+              <span className="text-3xl font-bold text-purple-600">Rp {totalAmount.toLocaleString('id-ID')}</span>
             </div>
           </div>
         </div>
@@ -2071,12 +2170,22 @@ const SellTab = ({
         {/* Submit Button */}
         <button
           onClick={handleSellVoucher}
-          disabled={saleForm.voucherCodes.length === 0}
-          className="w-full px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-lg font-bold hover:from-purple-600 hover:to-purple-800 transition transform hover:scale-105 disabled:bg-gray-300 disabled:cursor-not-allowed text-lg shadow-lg"
+          disabled={saleForm.voucherCodes.length === 0 || !saleForm.customerName.trim()}
+          className="w-full px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-xl font-bold hover:from-purple-600 hover:to-purple-800 transition-all duration-300 transform hover:scale-105 disabled:bg-gray-300 disabled:cursor-not-allowed text-lg shadow-lg disabled:transform-none disabled:hover:scale-100 disabled:shadow-none"
         >
-          <CreditCard className="h-5 w-5 inline mr-2" />
-          PROSES PENJUALAN
+          <CreditCard className="h-6 w-6 inline mr-3" />
+          PROSES PENJUALAN - Rp {totalAmount.toLocaleString('id-ID')}
         </button>
+
+        {/* Validation Message */}
+        {!saleForm.customerName.trim() && (
+          <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
+            <p className="text-red-700 text-sm flex items-center gap-2 font-medium">
+              <AlertCircle className="h-4 w-4" />
+              Nama pelanggan harus diisi sebelum melakukan penjualan
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
