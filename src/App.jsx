@@ -4,7 +4,8 @@ import {
   CheckCircle, XCircle, History, Download, Camera, Filter, Calendar, 
   Printer, Search, User, Phone, Menu, X, ChevronDown, ChevronUp, 
   ShoppingCart, Home, CreditCard, BarChart3, Settings, LogOut, Bell,
-  AlertCircle, TrendingUp, Wallet, PieChart, Banknote, CreditCard as CreditCardIcon
+  AlertCircle, TrendingUp, Wallet, PieChart, Banknote, CreditCard as CreditCardIcon,
+  Check
 } from 'lucide-react';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import jsPDF from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm';
@@ -34,6 +35,7 @@ const WifiVoucherSalesApp = () => {
   const [selectedDebt, setSelectedDebt] = useState(null);
   const [soldVouchers, setSoldVouchers] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showDebtPaymentConfirmation, setShowDebtPaymentConfirmation] = useState(false);
 
   // Form states
   const [saleForm, setSaleForm] = useState({
@@ -230,7 +232,23 @@ const WifiVoucherSalesApp = () => {
           .order('created_at', { ascending: false });
         
         if (debtsError) throw debtsError;
-        setDebts(debtsData || []);
+        
+        // Transform status hutang: hanya lunas dan belum lunas
+        const transformedDebts = (debtsData || []).map(debt => {
+          let status = 'unpaid';
+          if (debt.remaining === 0) {
+            status = 'paid';
+          } else if (debt.remaining > 0 && debt.remaining < debt.amount) {
+            // Jika ada pembayaran sebagian, tetap anggap belum lunas
+            status = 'unpaid';
+          }
+          return {
+            ...debt,
+            status: status
+          };
+        });
+        
+        setDebts(transformedDebts);
 
         // Auto-login jika user tersimpan
         if (savedUser) {
@@ -570,6 +588,51 @@ const WifiVoucherSalesApp = () => {
     }
   };
 
+  // FUNGSI BARU: Bayar hutang dengan satu klik (melunasi seluruhnya)
+  const handlePayDebtOneClick = async (debt) => {
+    if (!debt || debt.remaining === 0) {
+      alert('Hutang ini sudah lunas!');
+      return;
+    }
+
+    try {
+      // Update debt record - langsung lunasi seluruh sisa hutang
+      const { error: updateError } = await supabase
+        .from('debts')
+        .update({
+          paid: debt.amount,
+          remaining: 0,
+          status: 'paid'
+        })
+        .eq('id', debt.id);
+
+      if (updateError) throw updateError;
+
+      // Insert payment record untuk pembayaran penuh
+      const { error: paymentError } = await supabase
+        .from('debt_payments')
+        .insert([{
+          debt_id: debt.id,
+          amount: debt.remaining,
+          received_by: currentUser.id,
+          paid_at: new Date().toISOString(),
+          payment_type: 'full'
+        }]);
+
+      if (paymentError) throw paymentError;
+
+      // Reload data
+      await loadData();
+
+      setShowDebtPaymentConfirmation(false);
+      alert(`Hutang ${debt.customer_name} sebesar Rp ${debt.remaining.toLocaleString('id-ID')} telah dilunasi!`);
+    } catch (error) {
+      console.error('Error paying debt:', error);
+      alert('Gagal melunasi hutang: ' + error.message);
+    }
+  };
+
+  // FUNGSI LAMA: Bayar hutang dengan input jumlah (tetap dipertahankan untuk kompatibilitas)
   const handlePayDebt = async () => {
     if (!selectedDebt || debtPaymentForm.amount <= 0) {
       alert('Masukkan jumlah pembayaran yang valid!');
@@ -584,7 +647,7 @@ const WifiVoucherSalesApp = () => {
     try {
       const newPaid = selectedDebt.paid + debtPaymentForm.amount;
       const newRemaining = selectedDebt.remaining - debtPaymentForm.amount;
-      const newStatus = newRemaining === 0 ? 'paid' : 'partial';
+      const newStatus = newRemaining === 0 ? 'paid' : 'unpaid';
 
       // Insert payment record
       const { error: paymentError } = await supabase
@@ -593,7 +656,8 @@ const WifiVoucherSalesApp = () => {
           debt_id: selectedDebt.id,
           amount: debtPaymentForm.amount,
           received_by: currentUser.id,
-          paid_at: new Date().toISOString()
+          paid_at: new Date().toISOString(),
+          payment_type: 'partial'
         }]);
 
       if (paymentError) throw paymentError;
@@ -663,7 +727,23 @@ const WifiVoucherSalesApp = () => {
         .order('created_at', { ascending: false });
       
       if (debtsError) throw debtsError;
-      setDebts(debtsData || []);
+      
+      // Transform status hutang: hanya lunas dan belum lunas
+      const transformedDebts = (debtsData || []).map(debt => {
+        let status = 'unpaid';
+        if (debt.remaining === 0) {
+          status = 'paid';
+        } else if (debt.remaining > 0 && debt.remaining < debt.amount) {
+          // Jika ada pembayaran sebagian, tetap anggap belum lunas
+          status = 'unpaid';
+        }
+        return {
+          ...debt,
+          status: status
+        };
+      });
+      
+      setDebts(transformedDebts);
 
       setLoading(false);
     } catch (error) {
@@ -687,12 +767,28 @@ const WifiVoucherSalesApp = () => {
 
   // FUNGSI BARU: Total Hutang Belum Lunas Semua Admin
   const getTotalUnpaidDebtAllAdmins = () => {
-    return debts.reduce((total, debt) => total + debt.remaining, 0);
+    return debts
+      .filter(debt => debt.status === 'unpaid')
+      .reduce((total, debt) => total + debt.remaining, 0);
   };
 
-  // FUNGSI BARU: Total Terbayar Semua Admin
+  // FUNGSI BARU: Total Hutang Lunas Semua Admin
   const getTotalPaidDebtAllAdmins = () => {
-    return debts.reduce((total, debt) => total + debt.paid, 0);
+    return debts
+      .filter(debt => debt.status === 'paid')
+      .reduce((total, debt) => total + debt.amount, 0);
+  };
+
+  // FUNGSI BARU: Total Hutang Belum Lunas per Admin
+  const getUnpaidDebtCount = (adminId = null) => {
+    const relevantDebts = adminId ? debts.filter(d => d.admin_id === adminId) : debts;
+    return relevantDebts.filter(debt => debt.status === 'unpaid').length;
+  };
+
+  // FUNGSI BARU: Total Hutang Lunas per Admin
+  const getPaidDebtCount = (adminId = null) => {
+    const relevantDebts = adminId ? debts.filter(d => d.admin_id === adminId) : debts;
+    return relevantDebts.filter(debt => debt.status === 'paid').length;
   };
 
   // Fungsi untuk menghitung total pendapatan per admin
@@ -705,17 +801,26 @@ const WifiVoucherSalesApp = () => {
     const debtRevenue = debtSales.reduce((sum, s) => sum + s.amount, 0);
     const totalRevenue = cashRevenue + debtRevenue;
 
+    // Hitung hutang lunas dan belum lunas untuk admin ini
+    const adminDebts = debts.filter(d => d.admin_id === adminId);
+    const unpaidDebts = adminDebts.filter(d => d.status === 'unpaid');
+    const paidDebts = adminDebts.filter(d => d.status === 'paid');
+
     return {
       cash: cashRevenue,
       debt: debtRevenue,
       total: totalRevenue,
       salesCount: adminSales.length,
       cashCount: cashSales.length,
-      debtCount: debtSales.length
+      debtCount: debtSales.length,
+      unpaidDebtCount: unpaidDebts.length,
+      paidDebtCount: paidDebts.length,
+      unpaidDebtAmount: unpaidDebts.reduce((sum, d) => sum + d.remaining, 0),
+      paidDebtAmount: paidDebts.reduce((sum, d) => sum + d.amount, 0)
     };
   };
 
-  // Fungsi untuk generate PDF dengan tema ungu-kuning
+  // Fungsi untuk generate PDF dengan tema ungu-kuning (DIMODIFIKASI untuk hutang)
   const handlePrintReport = async (data, title, type = 'sales') => {
     try {
       if (typeof window.jsPDF === 'undefined') {
@@ -776,7 +881,7 @@ const WifiVoucherSalesApp = () => {
           },
           { 
             label: 'Hutang Belum Lunas', 
-            value: `Rp ${getTotalDebtAmount().toLocaleString('id-ID')}`, 
+            value: `Rp ${getTotalUnpaidDebtAllAdmins().toLocaleString('id-ID')}`, 
             color: [239, 68, 68], // Merah
             bgColor: [254, 242, 242]
           }
@@ -828,7 +933,7 @@ const WifiVoucherSalesApp = () => {
           pdf.text('Cash', 95, yPosition + 5, { align: 'right' });
           pdf.text('Hutang', 120, yPosition + 5, { align: 'right' });
           pdf.text('Total', 150, yPosition + 5, { align: 'right' });
-          pdf.text('Status', 180, yPosition + 5, { align: 'right' });
+          pdf.text('Status Hutang', 180, yPosition + 5, { align: 'right' });
           yPosition += 10;
 
           pdf.setFont(undefined, 'normal');
@@ -839,9 +944,8 @@ const WifiVoucherSalesApp = () => {
             }
 
             const revenue = getAdminRevenue(admin.id);
-            const totalDebt = getTotalDebtAmount(admin.id);
-            const statusColor = totalDebt === 0 ? [34, 197, 94] : [245, 158, 11];
-            const statusText = totalDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
+            const statusColor = revenue.unpaidDebtCount === 0 ? [34, 197, 94] : [245, 158, 11];
+            const statusText = revenue.unpaidDebtCount === 0 ? 'LUNAS' : 'BELUM LUNAS';
             
             const bgColor = index % 2 === 0 ? [255, 255, 255] : [250, 250, 250];
             
@@ -956,13 +1060,12 @@ const WifiVoucherSalesApp = () => {
           yPosition += 6;
         });
       } else if (type === 'debts') {
-        // LAPORAN HUTANG
+        // LAPORAN HUTANG - DIMODIFIKASI untuk hanya lunas dan belum lunas
         let totalDebt = 0;
         let totalPaid = 0;
         let totalRemaining = 0;
         let unpaidCount = 0;
         let paidCount = 0;
-        let partialCount = 0;
 
         data.forEach(debt => {
           totalDebt += debt.amount;
@@ -970,15 +1073,14 @@ const WifiVoucherSalesApp = () => {
           totalRemaining += debt.remaining;
           
           if (debt.status === 'paid') paidCount++;
-          else if (debt.status === 'partial') partialCount++;
           else unpaidCount++;
         });
 
         // Ringkasan hutang dengan tema
         pdf.setFillColor(255, 251, 235); // Light yellow
-        pdf.roundedRect(14, yPosition, pageWidth - 28, 30, 3, 3, 'F');
+        pdf.roundedRect(14, yPosition, pageWidth - 28, 25, 3, 3, 'F');
         pdf.setDrawColor(245, 158, 11); // Yellow
-        pdf.roundedRect(14, yPosition, pageWidth - 28, 30, 3, 3, 'S');
+        pdf.roundedRect(14, yPosition, pageWidth - 28, 25, 3, 3, 'S');
         
         pdf.setFontSize(9);
         pdf.setTextColor(245, 158, 11);
@@ -989,16 +1091,15 @@ const WifiVoucherSalesApp = () => {
         pdf.setTextColor(75, 85, 99);
         pdf.text(`Total Hutang: ${data.length} pelanggan`, 20, yPosition + 12);
         pdf.text(`Lunas: ${paidCount}`, 20, yPosition + 17);
-        pdf.text(`Cicilan: ${partialCount}`, 20, yPosition + 22);
-        pdf.text(`Belum Bayar: ${unpaidCount}`, 20, yPosition + 27);
+        pdf.text(`Belum Lunas: ${unpaidCount}`, 20, yPosition + 22);
         
         pdf.text(`Total Nilai: Rp ${totalDebt.toLocaleString('id-ID')}`, 120, yPosition + 12, { align: 'right' });
         pdf.text(`Total Terbayar: Rp ${totalPaid.toLocaleString('id-ID')}`, 120, yPosition + 17, { align: 'right' });
         pdf.setTextColor(239, 68, 68);
         pdf.setFont(undefined, 'bold');
-        pdf.text(`Sisa Hutang: Rp ${totalRemaining.toLocaleString('id-ID')}`, 120, yPosition + 27, { align: 'right' });
+        pdf.text(`Sisa Hutang: Rp ${totalRemaining.toLocaleString('id-ID')}`, 120, yPosition + 22, { align: 'right' });
 
-        yPosition += 40;
+        yPosition += 35;
 
         // Header tabel
         pdf.setFillColor(245, 158, 11); // Yellow
@@ -1037,13 +1138,10 @@ const WifiVoucherSalesApp = () => {
           pdf.text(`Rp ${debt.paid.toLocaleString('id-ID')}`, 115, yPosition + 3.5, { align: 'right' });
           pdf.text(`Rp ${debt.remaining.toLocaleString('id-ID')}`, 140, yPosition + 3.5, { align: 'right' });
           
-          // Status dengan warna
+          // Status dengan warna (hanya lunas dan belum lunas)
           if (debt.status === 'paid') {
             pdf.setTextColor(34, 197, 94);
             pdf.text('LUNAS', 165, yPosition + 3.5, { align: 'right' });
-          } else if (debt.status === 'partial') {
-            pdf.setTextColor(245, 158, 11);
-            pdf.text('CICILAN', 165, yPosition + 3.5, { align: 'right' });
           } else {
             pdf.setTextColor(239, 68, 68);
             pdf.text('BELUM LUNAS', 165, yPosition + 3.5, { align: 'right' });
@@ -1094,7 +1192,7 @@ const WifiVoucherSalesApp = () => {
 
   const getTotalDebtAmount = (adminId = null) => {
     const relevantDebts = adminId ? getAdminDebts(adminId) : debts;
-    return relevantDebts.reduce((sum, d) => sum + d.remaining, 0);
+    return relevantDebts.filter(d => d.status === 'unpaid').reduce((sum, d) => sum + d.remaining, 0);
   };
 
   const getAvailableVouchers = () => {
@@ -1280,6 +1378,8 @@ const WifiVoucherSalesApp = () => {
               getTotalDebtAllAdmins={getTotalDebtAllAdmins}
               getTotalUnpaidDebtAllAdmins={getTotalUnpaidDebtAllAdmins}
               getTotalPaidDebtAllAdmins={getTotalPaidDebtAllAdmins}
+              getUnpaidDebtCount={getUnpaidDebtCount}
+              getPaidDebtCount={getPaidDebtCount}
               onPrintReport={() => handlePrintReport(sales, 'Laporan Dashboard', 'dashboard')}
               reportRef={reportRef}
               notifications={notifications}
@@ -1324,6 +1424,9 @@ const WifiVoucherSalesApp = () => {
               setShowDebtPaymentModal={setShowDebtPaymentModal}
               onPrintReport={() => handlePrintReport(filterDebts(debts), 'Laporan Hutang', 'debts')}
               reportRef={reportRef}
+              handlePayDebtOneClick={handlePayDebtOneClick}
+              setShowDebtPaymentConfirmation={setShowDebtPaymentConfirmation}
+              filterDebts={filterDebts}
             />
           )}
 
@@ -1556,6 +1659,73 @@ const WifiVoucherSalesApp = () => {
           </div>
         </Modal>
       )}
+
+      {/* Modal Konfirmasi Pembayaran Hutang dengan Satu Klik */}
+      {showDebtPaymentConfirmation && selectedDebt && (
+        <Modal 
+          title="Konfirmasi Pelunasan Hutang" 
+          onClose={() => setShowDebtPaymentConfirmation(false)}
+        >
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <DollarSign className="h-8 w-8 text-green-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-800">Lunasi Hutang Sekarang?</h3>
+              <p className="text-gray-600 mt-2">
+                Anda akan melunasi seluruh sisa hutang pelanggan ini dengan sekali klik.
+              </p>
+            </div>
+
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Pelanggan:</span>
+                  <span className="font-medium">{selectedDebt.customer_name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Total Hutang:</span>
+                  <span className="font-medium">Rp {selectedDebt.amount.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Sudah Dibayar:</span>
+                  <span className="font-medium text-green-600">Rp {selectedDebt.paid.toLocaleString('id-ID')}</span>
+                </div>
+                <div className="flex justify-between text-lg font-bold border-t border-gray-300 pt-2 mt-2">
+                  <span className="text-gray-800">Sisa Hutang:</span>
+                  <span className="text-red-600">Rp {selectedDebt.remaining.toLocaleString('id-ID')}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <AlertCircle className="h-5 w-5 text-yellow-600 mr-2 mt-0.5" />
+                <p className="text-sm text-yellow-800">
+                  Setelah dilunasi, status hutang akan berubah menjadi <strong>LUNAS</strong> dan tidak dapat dikembalikan.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setShowDebtPaymentConfirmation(false)}
+                className="px-4 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition font-medium flex items-center justify-center gap-2"
+              >
+                <X className="h-4 w-4" />
+                Batal
+              </button>
+              <button
+                onClick={() => handlePayDebtOneClick(selectedDebt)}
+                className="px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium flex items-center justify-center gap-2"
+              >
+                <Check className="h-4 w-4" />
+                Ya, Lunasi
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
@@ -1642,6 +1812,7 @@ const DashboardTab = ({
   currentUser, vouchers, sales, debts, admins, getTotalRevenue, getTotalDebtAmount, 
   getAvailableVouchers, getAdminSales, getAdminDebts, getAdminRevenue,
   getTotalCashAllAdmins, getTotalDebtAllAdmins, getTotalUnpaidDebtAllAdmins, getTotalPaidDebtAllAdmins,
+  getUnpaidDebtCount, getPaidDebtCount,
   onPrintReport, reportRef, notifications 
 }) => {
   const isSuperadmin = currentUser.role === 'superadmin';
@@ -1655,6 +1826,10 @@ const DashboardTab = ({
   const totalDebtAllAdmins = getTotalDebtAllAdmins();
   const totalUnpaidDebtAllAdmins = getTotalUnpaidDebtAllAdmins();
   const totalPaidDebtAllAdmins = getTotalPaidDebtAllAdmins();
+
+  // Hitung statistik hutang
+  const unpaidDebtCount = getUnpaidDebtCount();
+  const paidDebtCount = getPaidDebtCount();
 
   return (
     <div className="space-y-6">
@@ -1707,6 +1882,44 @@ const DashboardTab = ({
         />
       </div>
 
+      {/* Statistik Hutang - LUNAS vs BELUM LUNAS */}
+      <div className="bg-white rounded-xl shadow-md p-6">
+        <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <FileText className="h-5 w-5" />
+          Statistik Hutang
+        </h3>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard
+            icon={<CheckCircle className="h-6 w-6" />}
+            title="Hutang Lunas"
+            value={paidDebtCount}
+            color="bg-green-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<XCircle className="h-6 w-6" />}
+            title="Hutang Belum Lunas"
+            value={unpaidDebtCount}
+            color="bg-red-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<Wallet className="h-6 w-6" />}
+            title="Total Nilai Lunas"
+            value={`Rp ${totalPaidDebtAllAdmins.toLocaleString('id-ID')}`}
+            color="bg-emerald-500"
+            compact={true}
+          />
+          <StatCard
+            icon={<AlertCircle className="h-6 w-6" />}
+            title="Total Nilai Belum Lunas"
+            value={`Rp ${totalUnpaidDebtAllAdmins.toLocaleString('id-ID')}`}
+            color="bg-orange-500"
+            compact={true}
+          />
+        </div>
+      </div>
+
       {/* Total Semua Admin Section */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -1729,14 +1942,14 @@ const DashboardTab = ({
             compact={true}
           />
           <StatCard
-            icon={<Wallet className="h-6 w-6" />}
-            title="Hutang Terbayar"
+            icon={<CheckCircle className="h-6 w-6" />}
+            title="Hutang Lunas"
             value={`Rp ${totalPaidDebtAllAdmins.toLocaleString('id-ID')}`}
             color="bg-emerald-500"
             compact={true}
           />
           <StatCard
-            icon={<FileText className="h-6 w-6" />}
+            icon={<AlertCircle className="h-6 w-6" />}
             title="Hutang Belum Lunas"
             value={`Rp ${totalUnpaidDebtAllAdmins.toLocaleString('id-ID')}`}
             color="bg-orange-500"
@@ -1865,9 +2078,8 @@ const DashboardTab = ({
               <tbody>
                 {admins.filter(a => a.role === 'admin').map(admin => {
                   const revenue = getAdminRevenue(admin.id);
-                  const adminDebt = getTotalDebtAmount(admin.id);
-                  const status = adminDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
-                  const statusColor = adminDebt === 0 ? 'text-green-600' : 'text-red-600';
+                  const status = revenue.unpaidDebtCount === 0 ? 'LUNAS' : 'BELUM LUNAS';
+                  const statusColor = revenue.unpaidDebtCount === 0 ? 'text-green-600' : 'text-red-600';
                   
                   return (
                     <tr key={admin.id} className="border-b border-gray-100 hover:bg-gray-50">
@@ -2203,7 +2415,7 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
           <button
             onClick={() => setShowFilters(!showFilters)}
             className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2 text-sm justify-center"
-          >
+            >
             <Filter className="h-4 w-4" />
             {showFilters ? 'Sembunyikan Filter' : 'Tampilkan Filter'}
           </button>
@@ -2370,9 +2582,60 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
   );
 };
 
-// Komponen Debts Tab - SEMUA ADMIN BISA LIHAT DAN BAYAR SEMUA HUTANG
-const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, setShowDebtPaymentModal, onPrintReport, reportRef }) => {
+// Komponen DebtsTab - DIMODIFIKASI untuk sistem lunas/belum lunas saja
+const DebtsTab = ({ 
+  currentUser, 
+  debts, 
+  filters, 
+  setFilters, 
+  setSelectedDebt, 
+  setShowDebtPaymentModal, 
+  onPrintReport, 
+  reportRef,
+  handlePayDebtOneClick,
+  setShowDebtPaymentConfirmation,
+  filterDebts
+}) => {
   const [showFilters, setShowFilters] = useState(false);
+
+  // Filter status hanya untuk lunas dan belum lunas
+  const statusOptions = [
+    { value: '', label: 'Semua Status' },
+    { value: 'unpaid', label: 'Belum Lunas' },
+    { value: 'paid', label: 'Lunas' }
+  ];
+
+  // FUNGSI BARU: Mengurutkan hutang - BELUM LUNAS di atas, LUNAS di bawah
+  const sortDebts = (debtsList) => {
+    if (!debtsList || debtsList.length === 0) return [];
+    
+    // Buat salinan array untuk diurutkan
+    const sorted = [...debtsList];
+    
+    // Urutkan berdasarkan:
+    // 1. Status: unpaid (belum lunas) dulu, baru paid (lunas)
+    // 2. Untuk yang status sama: berdasarkan sisa hutang terbesar ke terkecil
+    // 3. Untuk yang status sama dan sisa hutang sama: berdasarkan tanggal terbaru
+    sorted.sort((a, b) => {
+      // Prioritas 1: Status (unpaid dulu)
+      if (a.status === 'unpaid' && b.status === 'paid') return -1;
+      if (a.status === 'paid' && b.status === 'unpaid') return 1;
+      
+      // Prioritas 2: Sisa hutang (terbesar ke terkecil)
+      if (a.status === 'unpaid' && b.status === 'unpaid') {
+        return b.remaining - a.remaining;
+      }
+      
+      // Prioritas 3: Tanggal terbaru (untuk yang sudah lunas)
+      return new Date(b.created_at) - new Date(a.created_at);
+    });
+    
+    return sorted;
+  };
+
+  // Filter dan urutkan hutang
+  const filteredDebts = filterDebts(debts);
+  const sortedDebts = sortDebts(filteredDebts);
 
   return (
     <div className="space-y-6">
@@ -2402,6 +2665,10 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
           <p className="text-sm text-blue-800">
             <User className="h-4 w-4 inline mr-1" />
             Semua admin dapat melihat dan membayar semua hutang dari seluruh admin.
+          </p>
+          <p className="text-sm text-blue-800 mt-1">
+            <AlertCircle className="h-4 w-4 inline mr-1" />
+            <strong>Urutan Tampilan:</strong> Hutang BELUM LUNAS ditampilkan di atas, LUNAS di bawah.
           </p>
         </div>
 
@@ -2461,10 +2728,11 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
                   onChange={(e) => setFilters({ ...filters, status: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
                 >
-                  <option value="">Semua Status</option>
-                  <option value="unpaid">Belum Lunas</option>
-                  <option value="partial">Cicilan</option>
-                  <option value="paid">Lunas</option>
+                  {statusOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -2472,100 +2740,217 @@ const DebtsTab = ({ currentUser, debts, filters, setFilters, setSelectedDebt, se
         )}
 
         <div ref={reportRef}>
-          {debts.length === 0 ? (
+          {sortedDebts.length === 0 ? (
             <div className="text-center py-12">
               <CheckCircle className="h-16 w-16 text-green-300 mx-auto mb-4" />
               <p className="text-gray-500">Tidak ada data hutang</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {debts.map(debt => (
-                <div key={debt.id} className="border-2 border-red-200 rounded-lg p-4 bg-red-50">
-                  <div className="flex justify-between items-start mb-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
-                      <p className="text-sm text-gray-600">{debt.customer_phone}</p>
-                      {/* Tampilkan info admin untuk semua user */}
-                      <div className="flex items-center gap-1 mt-1">
-                        <User className="h-3 w-3 text-gray-400" />
-                        <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
-                      </div>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {new Date(debt.created_at).toLocaleString('id-ID', {
-                          day: '2-digit',
-                          month: 'short',
-                          year: 'numeric'
-                        })}
-                      </p>
-                    </div>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                      debt.status === 'unpaid'
-                        ? 'bg-red-100 text-red-700'
-                        : 'bg-yellow-100 text-yellow-700'
-                    }`}>
-                      {debt.status === 'unpaid' ? 'BELUM LUNAS' : 'CICILAN'}
+            <div>
+              {/* Header untuk hutang belum lunas */}
+              {sortedDebts.some(d => d.status === 'unpaid') && (
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-red-600 mb-2 flex items-center gap-2">
+                    <AlertCircle className="h-5 w-5" />
+                    Hutang Belum Lunas
+                    <span className="bg-red-100 text-red-700 text-xs font-medium px-2 py-1 rounded-full">
+                      {sortedDebts.filter(d => d.status === 'unpaid').length}
                     </span>
-                  </div>
-                  
-                  <div className="space-y-2 mb-3">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Total Hutang:</span>
-                      <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-600">Sudah Dibayar:</span>
-                      <span className="font-medium text-green-600">Rp {debt.paid.toLocaleString('id-ID')}</span>
-                    </div>
-                    <div className="flex justify-between text-lg font-bold">
-                      <span className="text-gray-800">Sisa Hutang:</span>
-                      <span className="text-red-600">Rp {debt.remaining.toLocaleString('id-ID')}</span>
-                    </div>
-                  </div>
+                  </h3>
+                </div>
+              )}
 
-                  <div className="mb-3">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div
-                        className="bg-green-500 h-2 rounded-full transition-all"
-                        style={{ width: `${(debt.paid / debt.amount) * 100}%` }}
-                      ></div>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-1 text-center">
-                      {((debt.paid / debt.amount) * 100).toFixed(0)}% terbayar
-                    </p>
-                  </div>
-
-                  {debt.payments && debt.payments.length > 0 && (
-                    <div className="mb-3">
-                      <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
-                      <div className="space-y-1 max-h-24 overflow-y-auto">
-                        {debt.payments.map(payment => (
-                          <div key={payment.id} className="text-xs bg-white p-2 rounded">
-                            <div className="flex justify-between">
-                              <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
-                              <span className="text-gray-500">
-                                {new Date(payment.paid_at).toLocaleDateString('id-ID')}
-                              </span>
-                            </div>
-                            <p className="text-gray-500">Diterima: {payment.received_by}</p>
+              {/* Grid untuk hutang belum lunas */}
+              {sortedDebts.some(d => d.status === 'unpaid') && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
+                  {sortedDebts
+                    .filter(debt => debt.status === 'unpaid')
+                    .map(debt => (
+                    <div key={debt.id} className="border-2 border-red-300 rounded-lg p-4 bg-red-50 shadow-sm hover:shadow-md transition-shadow">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
+                          <p className="text-sm text-gray-600">{debt.customer_phone}</p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <User className="h-3 w-3 text-gray-400" />
+                            <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
                           </div>
-                        ))}
+                          <p className="text-xs text-gray-500 mt-1">
+                            {new Date(debt.created_at).toLocaleString('id-ID', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
+                          BELUM LUNAS
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-2 mb-3">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Hutang:</span>
+                          <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Sudah Dibayar:</span>
+                          <span className="font-medium text-yellow-600">
+                            Rp {debt.paid.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-lg font-bold">
+                          <span className="text-gray-800">Sisa Hutang:</span>
+                          <span className="text-red-600">Rp {debt.remaining.toLocaleString('id-ID')}</span>
+                        </div>
+                      </div>
+
+                      <div className="mb-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className={`h-2 rounded-full transition-all ${
+                              debt.remaining === 0 
+                                ? 'bg-green-500' 
+                                : debt.paid > 0 
+                                  ? 'bg-yellow-500' 
+                                  : 'bg-red-500'
+                            }`}
+                            style={{ width: `${(debt.paid / debt.amount) * 100}%` }}
+                          ></div>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-1 text-center">
+                          {((debt.paid / debt.amount) * 100).toFixed(0)}% terbayar
+                        </p>
+                      </div>
+
+                      {debt.payments && debt.payments.length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
+                          <div className="space-y-1 max-h-24 overflow-y-auto">
+                            {debt.payments.map(payment => (
+                              <div key={payment.id} className="text-xs bg-white p-2 rounded border">
+                                <div className="flex justify-between">
+                                  <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
+                                  <span className="text-gray-500">
+                                    {new Date(payment.paid_at).toLocaleDateString('id-ID')}
+                                  </span>
+                                </div>
+                                <p className="text-gray-500 text-xs">Tipe: {payment.payment_type === 'full' ? 'Pelunasan' : 'Pembayaran'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setSelectedDebt(debt);
+                          setShowDebtPaymentConfirmation(true);
+                        }}
+                        className="w-full px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition text-sm font-medium flex items-center justify-center gap-2 shadow-md mt-2"
+                      >
+                        <DollarSign className="h-4 w-4" />
+                        LUNASI HUTANG (Rp {debt.remaining.toLocaleString('id-ID')})
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Header untuk hutang lunas */}
+              {sortedDebts.some(d => d.status === 'paid') && (
+                <div className="mb-4">
+                  <h3 className="text-lg font-bold text-green-600 mb-2 flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5" />
+                    Hutang Lunas
+                    <span className="bg-green-100 text-green-700 text-xs font-medium px-2 py-1 rounded-full">
+                      {sortedDebts.filter(d => d.status === 'paid').length}
+                    </span>
+                  </h3>
+                </div>
+              )}
+
+              {/* Grid untuk hutang lunas */}
+              {sortedDebts.some(d => d.status === 'paid') && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {sortedDebts
+                    .filter(debt => debt.status === 'paid')
+                    .map(debt => (
+                    <div key={debt.id} className="border-2 border-green-200 rounded-lg p-4 bg-green-50 shadow-sm">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
+                          <p className="text-sm text-gray-600">{debt.customer_phone}</p>
+                          <div className="flex items-center gap-1 mt-1">
+                            <User className="h-3 w-3 text-gray-400" />
+                            <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {new Date(debt.created_at).toLocaleString('id-ID', {
+                              day: '2-digit',
+                              month: 'short',
+                              year: 'numeric'
+                            })}
+                          </p>
+                        </div>
+                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700 border border-green-300">
+                          LUNAS
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-2 mb-3">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Hutang:</span>
+                          <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Sudah Dibayar:</span>
+                          <span className="font-medium text-green-600">
+                            Rp {debt.paid.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-lg font-bold">
+                          <span className="text-gray-800">Sisa Hutang:</span>
+                          <span className="text-green-600">Rp 0</span>
+                        </div>
+                      </div>
+
+                      {debt.payments && debt.payments.length > 0 && (
+                        <div className="mb-3">
+                          <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
+                          <div className="space-y-1 max-h-24 overflow-y-auto">
+                            {debt.payments.map(payment => (
+                              <div key={payment.id} className="text-xs bg-white p-2 rounded border">
+                                <div className="flex justify-between">
+                                  <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
+                                  <span className="text-gray-500">
+                                    {new Date(payment.paid_at).toLocaleDateString('id-ID')}
+                                  </span>
+                                </div>
+                                <p className="text-gray-500 text-xs">Tipe: {payment.payment_type === 'full' ? 'Pelunasan' : 'Pembayaran'}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="text-center p-2 bg-green-100 rounded-lg border border-green-200">
+                        <p className="text-sm text-green-700 font-medium flex items-center justify-center gap-2">
+                          <CheckCircle className="h-4 w-4" />
+                          Hutang telah dilunasi
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          Dilunasi: {new Date(
+                            debt.payments && debt.payments.length > 0 
+                              ? debt.payments[debt.payments.length - 1]?.paid_at 
+                              : debt.created_at
+                          ).toLocaleDateString('id-ID')}
+                        </p>
                       </div>
                     </div>
-                  )}
-
-                  {/* Tombol bayar hutang - aktif untuk semua user */}
-                  <button
-                    onClick={() => {
-                      setSelectedDebt(debt);
-                      setShowDebtPaymentModal(true);
-                    }}
-                    className="w-full px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition text-sm font-medium"
-                  >
-                    <DollarSign className="h-4 w-4 inline mr-1" />
-                    Bayar Hutang
-                  </button>
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -2612,14 +2997,14 @@ const AdminsTab = ({
             compact={true}
           />
           <StatCard
-            icon={<Wallet className="h-6 w-6" />}
-            title="Hutang Terbayar"
+            icon={<CheckCircle className="h-6 w-6" />}
+            title="Hutang Lunas"
             value={`Rp ${getTotalPaidDebtAllAdmins().toLocaleString('id-ID')}`}
             color="bg-emerald-500"
             compact={true}
           />
           <StatCard
-            icon={<FileText className="h-6 w-6" />}
+            icon={<AlertCircle className="h-6 w-6" />}
             title="Hutang Belum Lunas"
             value={`Rp ${getTotalUnpaidDebtAllAdmins().toLocaleString('id-ID')}`}
             color="bg-orange-500"
@@ -2646,9 +3031,8 @@ const AdminsTab = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {admins.map(admin => {
             const revenue = getAdminRevenue(admin.id);
-            const totalDebt = revenue.debt;
-            const status = totalDebt === 0 ? 'LUNAS' : 'BELUM LUNAS';
-            const statusColor = totalDebt === 0 ? 'text-green-600' : 'text-red-600';
+            const status = revenue.unpaidDebtCount === 0 ? 'LUNAS' : 'BELUM LUNAS';
+            const statusColor = revenue.unpaidDebtCount === 0 ? 'text-green-600' : 'text-red-600';
             
             return (
               <div key={admin.id} className="border border-gray-200 rounded-lg p-4">
@@ -2668,7 +3052,13 @@ const AdminsTab = ({
                           Pendapatan: Rp {revenue.total.toLocaleString('id-ID')}
                         </p>
                         <p className={`text-xs font-medium ${statusColor}`}>
-                          Status Hutang: {status}
+                          Status Hutang: {status} ({revenue.unpaidDebtCount} belum lunas)
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          Hutang Lunas: {revenue.paidDebtCount} • Nilai: Rp {revenue.paidDebtAmount.toLocaleString('id-ID')}
+                        </p>
+                        <p className="text-xs text-red-500">
+                          Hutang Belum Lunas: {revenue.unpaidDebtCount} • Nilai: Rp {revenue.unpaidDebtAmount.toLocaleString('id-ID')}
                         </p>
                       </div>
                     )}
