@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Users, Package, DollarSign, FileText, Plus, Eye, Trash2, Edit2, 
   CheckCircle, XCircle, History, Download, Camera, Filter, Calendar, 
   Printer, Search, User, Phone, Menu, X, ChevronDown, ChevronUp, 
   ShoppingCart, Home, CreditCard, BarChart3, Settings, LogOut, Bell,
   AlertCircle, TrendingUp, Wallet, PieChart, Banknote, CreditCard as CreditCardIcon,
-  Check
+  Check, Clock, Calendar as CalendarIcon, Info, Sparkles
 } from 'lucide-react';
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 import jsPDF from 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm';
@@ -16,6 +16,22 @@ const SUPABASE_URL = 'https://nvfmqhoeigxhbrdyscqz.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im52Zm1xaG9laWd4aGJyZHlzY3F6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjE0NDk2NTMsImV4cCI6MjA3NzAyNTY1M30.2xfjtHus5q-fXa7pVjkn1zN2648vZxe5gVBgpM-Sx4g';
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// Fungsi utilitas
+const formatRupiah = (number) => {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(number);
+};
+
+const getDaysDiff = (dateString) => {
+  const now = new Date();
+  const date = new Date(dateString);
+  const diffTime = Math.abs(now - date);
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
 
 const WifiVoucherSalesApp = () => {
   const [currentUser, setCurrentUser] = useState(null);
@@ -36,6 +52,7 @@ const WifiVoucherSalesApp = () => {
   const [soldVouchers, setSoldVouchers] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showDebtPaymentConfirmation, setShowDebtPaymentConfirmation] = useState(false);
+  const [showOverdueDebts, setShowOverdueDebts] = useState(false);
 
   // Form states
   const [saleForm, setSaleForm] = useState({
@@ -75,10 +92,48 @@ const WifiVoucherSalesApp = () => {
   // State untuk customer suggestions
   const [customerSuggestions, setCustomerSuggestions] = useState([]);
   const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  const [overdueDebtsList, setOverdueDebtsList] = useState([]);
 
   // Ref untuk UI
   const voucherCardRef = useRef(null);
   const reportRef = useRef(null);
+
+  // Fungsi untuk cek hutang yang overdue (lebih dari 7 hari)
+  const checkOverdueDebts = useCallback((debtsList) => {
+    const now = new Date();
+    const overdueDebts = debtsList.filter(debt => {
+      if (debt.status !== 'unpaid') return false;
+      
+      const debtDate = new Date(debt.created_at);
+      const diffTime = now - debtDate;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      return diffDays >= 7;
+    });
+    
+    return overdueDebts;
+  }, []);
+
+  // Fungsi untuk generate overdue notification
+  const generateOverdueNotification = (overdueDebts) => {
+    if (overdueDebts.length === 0) return null;
+    
+    const notificationId = 'overdue_debts_notification';
+    const existingNotification = notifications.find(n => n.id === notificationId);
+    
+    if (existingNotification) return existingNotification;
+    
+    return {
+      id: notificationId,
+      type: 'overdue',
+      title: 'Hutang Jatuh Tempo ⚠️',
+      message: `${overdueDebts.length} hutang belum lunas selama 7 hari atau lebih`,
+      details: overdueDebts,
+      timestamp: new Date().toISOString(),
+      isNew: true,
+      priority: 'high'
+    };
+  };
 
   // Real-time subscription untuk notifikasi
   useEffect(() => {
@@ -99,15 +154,16 @@ const WifiVoucherSalesApp = () => {
 
           // Tambah notifikasi penjualan baru
           const newNotification = {
-            id: Date.now(),
+            id: `sale_${Date.now()}`,
             type: 'sale',
-            title: 'Penjualan Baru',
+            title: 'Penjualan Baru 💰',
             message: `${adminData?.name || 'Admin'} menjual voucher ${payload.new.voucher_code}`,
             adminName: adminData?.name,
             amount: payload.new.amount,
             paymentMethod: payload.new.payment_method,
             timestamp: new Date().toISOString(),
-            isNew: true
+            isNew: true,
+            priority: 'medium'
           };
 
           setNotifications(prev => [newNotification, ...prev.slice(0, 49)]); // Keep last 50
@@ -128,15 +184,16 @@ const WifiVoucherSalesApp = () => {
             .single();
 
           const newNotification = {
-            id: Date.now(),
+            id: `debt_${Date.now()}`,
             type: 'debt',
-            title: 'Hutang Baru',
+            title: 'Hutang Baru 📝',
             message: `${adminData?.name || 'Admin'} mencatat hutang ${payload.new.customer_name}`,
             adminName: adminData?.name,
             amount: payload.new.amount,
             customerName: payload.new.customer_name,
             timestamp: new Date().toISOString(),
-            isNew: true
+            isNew: true,
+            priority: 'high'
           };
 
           setNotifications(prev => [newNotification, ...prev.slice(0, 49)]);
@@ -164,15 +221,16 @@ const WifiVoucherSalesApp = () => {
             .single();
 
           const newNotification = {
-            id: Date.now(),
+            id: `payment_${Date.now()}`,
             type: 'payment',
-            title: 'Pembayaran Hutang',
+            title: 'Pembayaran Hutang ✅',
             message: `${adminData?.name || 'Admin'} menerima pembayaran dari ${debtData?.customer_name || 'pelanggan'}`,
             adminName: adminData?.name,
             amount: payload.new.amount,
             customerName: debtData?.customer_name,
             timestamp: new Date().toISOString(),
-            isNew: true
+            isNew: true,
+            priority: 'medium'
           };
 
           setNotifications(prev => [newNotification, ...prev.slice(0, 49)]);
@@ -186,6 +244,29 @@ const WifiVoucherSalesApp = () => {
       paymentsSubscription.unsubscribe();
     };
   }, [currentUser]);
+
+  // Cek hutang overdue setiap kali debts berubah
+  useEffect(() => {
+    if (debts.length > 0) {
+      const overdueDebts = checkOverdueDebts(debts);
+      setOverdueDebtsList(overdueDebts);
+      
+      if (overdueDebts.length > 0) {
+        const overdueNotification = generateOverdueNotification(overdueDebts);
+        if (overdueNotification) {
+          setNotifications(prev => {
+            const existingIndex = prev.findIndex(n => n.id === overdueNotification.id);
+            if (existingIndex >= 0) {
+              const updated = [...prev];
+              updated[existingIndex] = overdueNotification;
+              return updated;
+            }
+            return [overdueNotification, ...prev];
+          });
+        }
+      }
+    }
+  }, [debts, checkOverdueDebts, generateOverdueNotification]);
 
   // Load data dari database
   useEffect(() => {
@@ -231,24 +312,46 @@ const WifiVoucherSalesApp = () => {
           `)
           .order('created_at', { ascending: false });
         
-        if (debtsError) throw debtsError;
-        
-        // Transform status hutang: hanya lunas dan belum lunas
-        const transformedDebts = (debtsData || []).map(debt => {
-          let status = 'unpaid';
-          if (debt.remaining === 0) {
-            status = 'paid';
-          } else if (debt.remaining > 0 && debt.remaining < debt.amount) {
-            // Jika ada pembayaran sebagian, tetap anggap belum lunas
-            status = 'unpaid';
-          }
-          return {
-            ...debt,
-            status: status
-          };
-        });
-        
-        setDebts(transformedDebts);
+        if (debtsError) {
+          console.warn('Error loading payments, trying without:', debtsError);
+          // Coba ambil tanpa payments
+          const { data: simpleDebtsData, error: simpleError } = await supabase
+            .from('debts')
+            .select('*, admin:admins(name)')
+            .order('created_at', { ascending: false });
+          
+          if (simpleError) throw simpleError;
+          
+          // Transform status hutang: hanya lunas dan belum lunas
+          const transformedDebts = (simpleDebtsData || []).map(debt => {
+            const remaining = debt.remaining || (debt.amount - (debt.paid || 0));
+            const status = remaining === 0 ? 'paid' : 'unpaid';
+            return {
+              ...debt,
+              remaining,
+              status: status,
+              payments: []
+            };
+          });
+          
+          setDebts(transformedDebts);
+        } else {
+          // Transform status hutang: hanya lunas dan belum lunas
+          const transformedDebts = (debtsData || []).map(debt => {
+            let status = 'unpaid';
+            const remaining = debt.remaining || (debt.amount - (debt.paid || 0));
+            if (remaining === 0) {
+              status = 'paid';
+            }
+            return {
+              ...debt,
+              remaining,
+              status: status
+            };
+          });
+          
+          setDebts(transformedDebts);
+        }
 
         // Auto-login jika user tersimpan
         if (savedUser) {
@@ -609,17 +712,28 @@ const WifiVoucherSalesApp = () => {
       if (updateError) throw updateError;
 
       // Insert payment record untuk pembayaran penuh
-      const { error: paymentError } = await supabase
-        .from('debt_payments')
-        .insert([{
-          debt_id: debt.id,
-          amount: debt.remaining,
-          received_by: currentUser.id,
-          paid_at: new Date().toISOString(),
-          payment_type: 'full'
-        }]);
+      const paymentData = {
+        debt_id: debt.id,
+        amount: debt.remaining,
+        received_by: currentUser.id,
+        paid_at: new Date().toISOString()
+      };
 
-      if (paymentError) throw paymentError;
+      // Coba dengan payment_type, jika error coba tanpa
+      try {
+        const { error: paymentError } = await supabase
+          .from('debt_payments')
+          .insert([{ ...paymentData, payment_type: 'full' }]);
+
+        if (paymentError) throw paymentError;
+      } catch (paymentError) {
+        console.warn('Failed with payment_type, trying without:', paymentError);
+        const { error: paymentError2 } = await supabase
+          .from('debt_payments')
+          .insert([paymentData]);
+        
+        if (paymentError2) throw paymentError2;
+      }
 
       // Reload data
       await loadData();
@@ -632,7 +746,7 @@ const WifiVoucherSalesApp = () => {
     }
   };
 
-  // FUNGSI LAMA: Bayar hutang dengan input jumlah (tetap dipertahankan untuk kompatibilitas)
+  // FUNGSI LAMA: Bayar hutang dengan input jumlah
   const handlePayDebt = async () => {
     if (!selectedDebt || debtPaymentForm.amount <= 0) {
       alert('Masukkan jumlah pembayaran yang valid!');
@@ -650,17 +764,28 @@ const WifiVoucherSalesApp = () => {
       const newStatus = newRemaining === 0 ? 'paid' : 'unpaid';
 
       // Insert payment record
-      const { error: paymentError } = await supabase
-        .from('debt_payments')
-        .insert([{
-          debt_id: selectedDebt.id,
-          amount: debtPaymentForm.amount,
-          received_by: currentUser.id,
-          paid_at: new Date().toISOString(),
-          payment_type: 'partial'
-        }]);
+      const paymentData = {
+        debt_id: selectedDebt.id,
+        amount: debtPaymentForm.amount,
+        received_by: currentUser.id,
+        paid_at: new Date().toISOString()
+      };
 
-      if (paymentError) throw paymentError;
+      // Coba dengan payment_type, jika error coba tanpa
+      try {
+        const { error: paymentError } = await supabase
+          .from('debt_payments')
+          .insert([{ ...paymentData, payment_type: 'partial' }]);
+
+        if (paymentError) throw paymentError;
+      } catch (paymentError) {
+        console.warn('Failed with payment_type, trying without:', paymentError);
+        const { error: paymentError2 } = await supabase
+          .from('debt_payments')
+          .insert([paymentData]);
+        
+        if (paymentError2) throw paymentError2;
+      }
 
       // Update debt
       const { error: updateError } = await supabase
@@ -717,33 +842,59 @@ const WifiVoucherSalesApp = () => {
       if (salesError) throw salesError;
       setSales(salesData || []);
 
-      const { data: debtsData, error: debtsError } = await supabase
-        .from('debts')
-        .select(`
-          *,
-          admin:admins(name),
-          payments:debt_payments(*)
-        `)
-        .order('created_at', { ascending: false });
-      
-      if (debtsError) throw debtsError;
-      
-      // Transform status hutang: hanya lunas dan belum lunas
-      const transformedDebts = (debtsData || []).map(debt => {
-        let status = 'unpaid';
-        if (debt.remaining === 0) {
-          status = 'paid';
-        } else if (debt.remaining > 0 && debt.remaining < debt.amount) {
-          // Jika ada pembayaran sebagian, tetap anggap belum lunas
-          status = 'unpaid';
-        }
-        return {
-          ...debt,
-          status: status
-        };
-      });
-      
-      setDebts(transformedDebts);
+      try {
+        const { data: debtsData, error: debtsError } = await supabase
+          .from('debts')
+          .select(`
+            *,
+            admin:admins(name),
+            payments:debt_payments(*)
+          `)
+          .order('created_at', { ascending: false });
+        
+        if (debtsError) throw debtsError;
+        
+        // Transform status hutang: hanya lunas dan belum lunas
+        const transformedDebts = (debtsData || []).map(debt => {
+          let status = 'unpaid';
+          const remaining = debt.remaining || (debt.amount - (debt.paid || 0));
+          if (remaining === 0) {
+            status = 'paid';
+          }
+          return {
+            ...debt,
+            remaining,
+            status: status
+          };
+        });
+        
+        setDebts(transformedDebts);
+      } catch (debtsError) {
+        console.warn('Error loading debts with payments:', debtsError);
+        // Coba ambil tanpa payments
+        const { data: simpleDebtsData, error: simpleError } = await supabase
+          .from('debts')
+          .select('*, admin:admins(name)')
+          .order('created_at', { ascending: false });
+        
+        if (simpleError) throw simpleError;
+        
+        const transformedDebts = (simpleDebtsData || []).map(debt => {
+          let status = 'unpaid';
+          const remaining = debt.remaining || (debt.amount - (debt.paid || 0));
+          if (remaining === 0) {
+            status = 'paid';
+          }
+          return {
+            ...debt,
+            remaining,
+            status: status,
+            payments: []
+          };
+        });
+        
+        setDebts(transformedDebts);
+      }
 
       setLoading(false);
     } catch (error) {
@@ -820,19 +971,15 @@ const WifiVoucherSalesApp = () => {
     };
   };
 
-  // Fungsi untuk generate PDF dengan tema ungu-kuning (DIMODIFIKASI untuk hutang)
+  // Fungsi untuk generate PDF dengan tema ungu-kuning
   const handlePrintReport = async (data, title, type = 'sales') => {
     try {
-      if (typeof window.jsPDF === 'undefined') {
-        throw new Error('Library PDF tidak tersedia');
-      }
-
-      const pdf = new window.jsPDF('p', 'mm', 'a4');
+      const pdf = new jsPDF('p', 'mm', 'a4');
       const pageWidth = pdf.internal.pageSize.getWidth();
       let yPosition = 20;
 
       // Header dengan gradient background ungu
-      pdf.setFillColor(139, 92, 246); // Warna ungu
+      pdf.setFillColor(139, 92, 246);
       pdf.rect(0, 0, pageWidth, 25, 'F');
       
       // Logo dan judul
@@ -859,30 +1006,29 @@ const WifiVoucherSalesApp = () => {
         pdf.text('Ringkasan Keuangan', 14, yPosition);
         yPosition += 10;
 
-        // Statistik utama dengan tema ungu-kuning
         const stats = [
           { 
             label: 'Voucher Tersedia', 
             value: getAvailableVouchers().length.toString(), 
-            color: [139, 92, 246], // Ungu
+            color: [139, 92, 246],
             bgColor: [250, 245, 255]
           },
           { 
             label: 'Total Penjualan', 
             value: `${sales.length} transaksi`, 
-            color: [245, 158, 11], // Kuning
+            color: [245, 158, 11],
             bgColor: [255, 251, 235]
           },
           { 
             label: 'Pendapatan Cash', 
             value: `Rp ${getTotalRevenue().toLocaleString('id-ID')}`, 
-            color: [34, 197, 94], // Hijau
+            color: [34, 197, 94],
             bgColor: [240, 253, 244]
           },
           { 
             label: 'Hutang Belum Lunas', 
             value: `Rp ${getTotalUnpaidDebtAllAdmins().toLocaleString('id-ID')}`, 
-            color: [239, 68, 68], // Merah
+            color: [239, 68, 68],
             bgColor: [254, 242, 242]
           }
         ];
@@ -891,11 +1037,9 @@ const WifiVoucherSalesApp = () => {
           const x = 14 + (index % 2) * 90;
           const y = yPosition + Math.floor(index / 2) * 20;
           
-          // Background card
           pdf.setFillColor(...stat.bgColor);
           pdf.roundedRect(x, y, 80, 16, 3, 3, 'F');
           
-          // Border dengan warna tema
           pdf.setDrawColor(...stat.color);
           pdf.setLineWidth(0.5);
           pdf.roundedRect(x, y, 80, 16, 3, 3, 'S');
@@ -919,8 +1063,7 @@ const WifiVoucherSalesApp = () => {
           pdf.text('Performance Admin', 14, yPosition);
           yPosition += 8;
 
-          // Header tabel admin
-          pdf.setFillColor(250, 245, 255); // Light purple
+          pdf.setFillColor(250, 245, 255);
           pdf.rect(14, yPosition, pageWidth - 28, 8, 'F');
           pdf.setDrawColor(139, 92, 246);
           pdf.rect(14, yPosition, pageWidth - 28, 8, 'S');
@@ -985,7 +1128,6 @@ const WifiVoucherSalesApp = () => {
 
         const totalAll = totalCash + totalDebt;
 
-        // Ringkasan penjualan dengan tema
         pdf.setFillColor(250, 245, 255);
         pdf.roundedRect(14, yPosition, pageWidth - 28, 25, 3, 3, 'F');
         pdf.setDrawColor(139, 92, 246);
@@ -1010,7 +1152,6 @@ const WifiVoucherSalesApp = () => {
 
         yPosition += 35;
 
-        // Header tabel
         pdf.setFillColor(139, 92, 246);
         pdf.rect(14, yPosition, pageWidth - 28, 6, 'F');
         pdf.setFontSize(7);
@@ -1025,7 +1166,6 @@ const WifiVoucherSalesApp = () => {
         pdf.text('JUMLAH', 180, yPosition + 4, { align: 'right' });
         yPosition += 8;
 
-        // Data penjualan
         pdf.setFont(undefined, 'normal');
         data.forEach((sale, index) => {
           if (yPosition > 250) {
@@ -1044,7 +1184,6 @@ const WifiVoucherSalesApp = () => {
           pdf.text(sale.voucher_code, 45, yPosition + 3.5);
           pdf.text(sale.customer_name !== '-' ? sale.customer_name : '-', 75, yPosition + 3.5);
           
-          // Warna berdasarkan metode pembayaran
           if (sale.payment_method === 'cash') {
             pdf.setTextColor(34, 197, 94);
             pdf.text('CASH', 110, yPosition + 3.5);
@@ -1060,7 +1199,7 @@ const WifiVoucherSalesApp = () => {
           yPosition += 6;
         });
       } else if (type === 'debts') {
-        // LAPORAN HUTANG - DIMODIFIKASI untuk hanya lunas dan belum lunas
+        // LAPORAN HUTANG
         let totalDebt = 0;
         let totalPaid = 0;
         let totalRemaining = 0;
@@ -1076,10 +1215,9 @@ const WifiVoucherSalesApp = () => {
           else unpaidCount++;
         });
 
-        // Ringkasan hutang dengan tema
-        pdf.setFillColor(255, 251, 235); // Light yellow
+        pdf.setFillColor(255, 251, 235);
         pdf.roundedRect(14, yPosition, pageWidth - 28, 25, 3, 3, 'F');
-        pdf.setDrawColor(245, 158, 11); // Yellow
+        pdf.setDrawColor(245, 158, 11);
         pdf.roundedRect(14, yPosition, pageWidth - 28, 25, 3, 3, 'S');
         
         pdf.setFontSize(9);
@@ -1101,8 +1239,7 @@ const WifiVoucherSalesApp = () => {
 
         yPosition += 35;
 
-        // Header tabel
-        pdf.setFillColor(245, 158, 11); // Yellow
+        pdf.setFillColor(245, 158, 11);
         pdf.rect(14, yPosition, pageWidth - 28, 6, 'F');
         pdf.setFontSize(7);
         pdf.setTextColor(255, 255, 255);
@@ -1117,7 +1254,6 @@ const WifiVoucherSalesApp = () => {
         pdf.text('ADMIN', 180, yPosition + 4, { align: 'right' });
         yPosition += 8;
 
-        // Data hutang
         pdf.setFont(undefined, 'normal');
         data.forEach((debt, index) => {
           if (yPosition > 250) {
@@ -1138,7 +1274,6 @@ const WifiVoucherSalesApp = () => {
           pdf.text(`Rp ${debt.paid.toLocaleString('id-ID')}`, 115, yPosition + 3.5, { align: 'right' });
           pdf.text(`Rp ${debt.remaining.toLocaleString('id-ID')}`, 140, yPosition + 3.5, { align: 'right' });
           
-          // Status dengan warna (hanya lunas dan belum lunas)
           if (debt.status === 'paid') {
             pdf.setTextColor(34, 197, 94);
             pdf.text('LUNAS', 165, yPosition + 3.5, { align: 'right' });
@@ -1154,7 +1289,6 @@ const WifiVoucherSalesApp = () => {
         });
       }
 
-      // Footer dengan branding
       const footerY = pdf.internal.pageSize.getHeight() - 10;
       pdf.setFontSize(8);
       pdf.setTextColor(139, 92, 246);
@@ -1241,13 +1375,25 @@ const WifiVoucherSalesApp = () => {
     return notifications.filter(notif => notif.isNew).length;
   };
 
+  // Fungsi untuk mark overdue debt as read
+  const markOverdueAsRead = () => {
+    setNotifications(prev => 
+      prev.map(notif => 
+        notif.type === 'overdue' ? { ...notif, isNew: false } : notif
+      )
+    );
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 to-yellow-50 flex items-center justify-center p-4">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Memuat data...</p>
-          <p className="text-sm text-gray-500 mt-2">Silakan tunggu sebentar</p>
+          <div className="relative">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-purple-600 mx-auto"></div>
+            <Package className="absolute inset-0 m-auto h-8 w-8 text-purple-600" />
+          </div>
+          <p className="mt-4 text-gray-600 font-medium">Memuat data...</p>
+          <p className="text-sm text-gray-500 mt-2">Menyiapkan dashboard Anda</p>
         </div>
       </div>
     );
@@ -1259,23 +1405,54 @@ const WifiVoucherSalesApp = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-yellow-50 pb-20">
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
+        }
+        .animate-slideUp {
+          animation: slideUp 0.3s ease-out;
+        }
+        .animate-pulse {
+          animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .safe-area-bottom {
+          padding-bottom: env(safe-area-inset-bottom, 20px);
+        }
+      `}</style>
+
       {/* Header dengan User Info */}
-      <nav className="bg-white shadow-sm border-b border-gray-200">
+      <nav className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
             <div className="flex items-center">
-              <Package className="h-8 w-8 text-purple-600" />
+              <div className="relative">
+                <Package className="h-8 w-8 text-purple-600" />
+                <div className="absolute -top-1 -right-1 bg-yellow-400 w-3 h-3 rounded-full"></div>
+              </div>
               <span className="ml-2 text-xl font-bold text-gray-800">wifisekre.net</span>
             </div>
             <div className="flex items-center space-x-4">
-              {/* Notifications Bell */}
+              {/* Notifications Bell dengan overdue alert */}
               <div className="relative">
                 <button
                   onClick={() => {
                     setShowNotifications(!showNotifications);
                     markNotificationsAsRead();
+                    markOverdueAsRead();
                   }}
-                  className="p-2 text-gray-500 hover:text-purple-600 transition rounded-lg hover:bg-purple-50 relative"
+                  className="p-2 text-gray-500 hover:text-purple-600 transition rounded-lg hover:bg-purple-50 relative group"
                   title="Notifikasi"
                 >
                   <Bell className="h-5 w-5" />
@@ -1284,26 +1461,60 @@ const WifiVoucherSalesApp = () => {
                       {getUnreadNotificationsCount()}
                     </span>
                   )}
+                  
+                  {/* Overdue debts indicator */}
+                  {overdueDebtsList.length > 0 && (
+                    <div className="absolute -top-1 -right-1">
+                      <div className="relative">
+                        <div className="absolute inset-0 bg-red-500 rounded-full animate-ping opacity-75"></div>
+                        <div className="relative bg-red-600 text-white text-xs font-bold rounded-full min-w-[18px] h-4 flex items-center justify-center">
+                          {overdueDebtsList.length}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </button>
 
                 {/* Notifications Dropdown */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 z-50">
-                    <div className="p-4 border-b border-gray-200">
-                      <h3 className="font-semibold text-gray-800">Notifikasi Terbaru</h3>
+                  <div className="absolute right-0 mt-2 w-96 bg-white rounded-xl shadow-xl border border-gray-200 z-50 max-h-[80vh] overflow-hidden animate-slideUp">
+                    <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-purple-50 to-white">
+                      <div className="flex justify-between items-center">
+                        <h3 className="font-bold text-gray-800">Notifikasi</h3>
+                        <div className="flex items-center gap-2">
+                          {overdueDebtsList.length > 0 && (
+                            <button
+                              onClick={() => {
+                                setShowOverdueDebts(true);
+                                setShowNotifications(false);
+                              }}
+                              className="px-3 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full hover:bg-red-200 transition"
+                            >
+                              Lihat {overdueDebtsList.length} hutang overdue
+                            </button>
+                          )}
+                          <button
+                            onClick={markNotificationsAsRead}
+                            className="text-sm text-purple-600 hover:text-purple-800"
+                          >
+                            Tandai semua dibaca
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                    <div className="max-h-96 overflow-y-auto">
+                    <div className="overflow-y-auto max-h-[calc(80vh-120px)]">
                       {notifications.length === 0 ? (
-                        <div className="p-4 text-center text-gray-500">
-                          Tidak ada notifikasi
+                        <div className="p-8 text-center">
+                          <Bell className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                          <p className="text-gray-500">Tidak ada notifikasi</p>
                         </div>
                       ) : (
-                        notifications.slice(0, 10).map((notification) => (
+                        notifications.slice(0, 20).map((notification) => (
                           <div
                             key={notification.id}
-                            className={`p-4 border-b border-gray-100 hover:bg-gray-50 ${
+                            className={`p-4 border-b border-gray-100 hover:bg-gray-50 transition ${
                               notification.isNew ? 'bg-blue-50' : ''
-                            }`}
+                            } ${notification.priority === 'high' ? 'border-l-4 border-l-red-500' : ''}`}
                           >
                             <div className="flex items-start space-x-3">
                               <div className={`p-2 rounded-full ${
@@ -1311,26 +1522,50 @@ const WifiVoucherSalesApp = () => {
                                   ? 'bg-green-100 text-green-600'
                                   : notification.type === 'debt'
                                   ? 'bg-yellow-100 text-yellow-600'
-                                  : 'bg-blue-100 text-blue-600'
+                                  : notification.type === 'payment'
+                                  ? 'bg-blue-100 text-blue-600'
+                                  : notification.type === 'overdue'
+                                  ? 'bg-red-100 text-red-600'
+                                  : 'bg-gray-100 text-gray-600'
                               }`}>
                                 {notification.type === 'sale' && <TrendingUp className="h-4 w-4" />}
                                 {notification.type === 'debt' && <FileText className="h-4 w-4" />}
                                 {notification.type === 'payment' && <Wallet className="h-4 w-4" />}
+                                {notification.type === 'overdue' && <AlertCircle className="h-4 w-4" />}
                               </div>
-                              <div className="flex-1">
-                                <p className="font-medium text-sm text-gray-800">
-                                  {notification.title}
-                                </p>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex justify-between items-start">
+                                  <p className="font-medium text-gray-800 text-sm">
+                                    {notification.title}
+                                  </p>
+                                  {notification.isNew && (
+                                    <span className="bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full">
+                                      BARU
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-sm text-gray-600 mt-1">
                                   {notification.message}
                                 </p>
                                 {notification.amount && (
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    Rp {notification.amount.toLocaleString('id-ID')}
+                                  <p className="text-sm font-medium text-gray-700 mt-1">
+                                    {formatRupiah(notification.amount)}
                                   </p>
                                 )}
-                                <p className="text-xs text-gray-400 mt-1">
-                                  {new Date(notification.timestamp).toLocaleString('id-ID')}
+                                {notification.type === 'overdue' && notification.details && (
+                                  <div className="mt-2">
+                                    <p className="text-xs text-red-600 font-medium">
+                                      {notification.details.length} hutang perlu segera ditagih
+                                    </p>
+                                  </div>
+                                )}
+                                <p className="text-xs text-gray-400 mt-2">
+                                  {new Date(notification.timestamp).toLocaleString('id-ID', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    day: '2-digit',
+                                    month: 'short'
+                                  })}
                                 </p>
                               </div>
                             </div>
@@ -1383,6 +1618,8 @@ const WifiVoucherSalesApp = () => {
               onPrintReport={() => handlePrintReport(sales, 'Laporan Dashboard', 'dashboard')}
               reportRef={reportRef}
               notifications={notifications}
+              overdueDebtsList={overdueDebtsList}
+              setShowOverdueDebts={setShowOverdueDebts}
             />
           )}
 
@@ -1405,7 +1642,7 @@ const WifiVoucherSalesApp = () => {
           {activeTab === 'sales' && (
             <SalesTab
               currentUser={currentUser}
-              sales={sales} // Semua admin bisa lihat semua penjualan
+              sales={sales}
               admins={admins}
               filters={salesFilters}
               setFilters={setSalesFilters}
@@ -1417,7 +1654,7 @@ const WifiVoucherSalesApp = () => {
           {activeTab === 'debts' && (
             <DebtsTab
               currentUser={currentUser}
-              debts={debts} // Semua admin bisa lihat semua hutang
+              debts={debts}
               filters={debtsFilters}
               setFilters={setDebtsFilters}
               setSelectedDebt={setSelectedDebt}
@@ -1427,6 +1664,8 @@ const WifiVoucherSalesApp = () => {
               handlePayDebtOneClick={handlePayDebtOneClick}
               setShowDebtPaymentConfirmation={setShowDebtPaymentConfirmation}
               filterDebts={filterDebts}
+              overdueDebtsList={overdueDebtsList}
+              setShowOverdueDebts={setShowOverdueDebts}
             />
           )}
 
@@ -1446,64 +1685,64 @@ const WifiVoucherSalesApp = () => {
         </div>
       </div>
 
-      {/* Bottom Navigation Bar Modern - 5 Menu untuk Semua User */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom">
+      {/* Bottom Navigation Bar Modern */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom shadow-lg">
         <div className="max-w-lg mx-auto">
-          <div className="flex justify-around items-center px-2 sm:px-4">
-            {/* Dashboard Button */}
+          <div className="flex justify-around items-center px-2 sm:px-4 py-1">
             <BottomNavButton
               active={activeTab === 'dashboard'}
               onClick={() => setActiveTab('dashboard')}
               icon={<Home className="h-5 w-5" />}
               label="Home"
+              badgeCount={overdueDebtsList.length > 0 ? overdueDebtsList.length : 0}
             />
 
-            {/* Sales Button */}
             <BottomNavButton
               active={activeTab === 'sales'}
               onClick={() => setActiveTab('sales')}
               icon={<BarChart3 className="h-5 w-5" />}
               label="Sales"
+              badgeCount={0}
             />
 
-            {/* Sell Button - Tampilan Berbeda */}
-            <div className="relative -mt-6">
+            <div className="relative -mt-8">
               <button
                 onClick={() => setActiveTab('sell')}
-                className="flex flex-col items-center transition-all"
+                className="flex flex-col items-center transition-all group"
               >
-                <div className={`p-3 sm:p-4 rounded-full transition-all shadow-lg ${
+                <div className={`p-3 sm:p-4 rounded-full transition-all shadow-lg relative overflow-hidden ${
                   activeTab === 'sell' 
-                    ? 'bg-gradient-to-r from-purple-600 to-purple-800 text-white scale-110' 
-                    : 'bg-gradient-to-r from-purple-500 to-purple-700 text-white hover:scale-105'
+                    ? 'bg-gradient-to-r from-purple-600 to-purple-800 text-white scale-110 ring-4 ring-purple-200' 
+                    : 'bg-gradient-to-r from-purple-500 to-purple-700 text-white hover:scale-105 hover:shadow-xl'
                 }`}>
-                  <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6" />
+                  <ShoppingCart className="h-5 w-5 sm:h-6 sm:w-6 relative z-10" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
                 </div>
                 <span className={`text-xs font-medium mt-1 ${
-                  activeTab === 'sell' ? 'text-purple-600' : 'text-gray-500'
+                  activeTab === 'sell' ? 'text-purple-600 font-bold' : 'text-gray-500'
                 }`}>Jual</span>
                 {getAvailableVouchers().length > 0 && (
-                  <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center shadow-md px-1">
+                  <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center shadow-md px-1 ring-2 ring-white">
                     {getAvailableVouchers().length}
                   </div>
                 )}
               </button>
             </div>
 
-            {/* Debts Button */}
             <BottomNavButton
               active={activeTab === 'debts'}
               onClick={() => setActiveTab('debts')}
               icon={<FileText className="h-5 w-5" />}
               label="Hutang"
+              badgeCount={getUnpaidDebtCount()}
             />
 
-            {/* Admin Button - Untuk Semua User */}
             <BottomNavButton
               active={activeTab === 'admins'}
               onClick={() => setActiveTab('admins')}
               icon={<Settings className="h-5 w-5" />}
               label="Admin"
+              badgeCount={0}
             />
           </div>
         </div>
@@ -1726,26 +1965,129 @@ const WifiVoucherSalesApp = () => {
           </div>
         </Modal>
       )}
+
+      {/* Modal Hutang Overdue */}
+      {showOverdueDebts && (
+        <Modal 
+          title="Hutang Jatuh Tempo (≥ 7 Hari)" 
+          onClose={() => setShowOverdueDebts(false)}
+          size="large"
+        >
+          <div className="space-y-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <AlertCircle className="h-5 w-5 text-red-600 mr-2 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-red-800 font-medium">
+                    {overdueDebtsList.length} hutang belum lunas selama 7 hari atau lebih
+                  </p>
+                  <p className="text-sm text-red-600 mt-1">
+                    Segera lakukan penagihan kepada pelanggan berikut:
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {overdueDebtsList.length === 0 ? (
+              <div className="text-center py-8">
+                <CheckCircle className="h-12 w-12 text-green-400 mx-auto mb-3" />
+                <p className="text-gray-600">Tidak ada hutang yang jatuh tempo</p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                {overdueDebtsList.map((debt, index) => {
+                  const daysDiff = getDaysDiff(debt.created_at);
+                  return (
+                    <div key={debt.id} className="border border-red-200 rounded-lg p-4 bg-white hover:bg-red-50 transition">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h4 className="font-bold text-gray-800">{debt.customer_name}</h4>
+                          <p className="text-sm text-gray-600">{debt.customer_phone}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <User className="h-3 w-3 text-gray-400" />
+                            <span className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</span>
+                          </div>
+                        </div>
+                        <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">
+                          {daysDiff} HARI
+                        </span>
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Total Hutang:</span>
+                          <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600">Sisa Hutang:</span>
+                          <span className="font-bold text-red-600">Rp {debt.remaining.toLocaleString('id-ID')}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="mt-3 flex justify-between items-center">
+                        <div className="text-xs text-gray-500">
+                          <CalendarIcon className="h-3 w-3 inline mr-1" />
+                          {new Date(debt.created_at).toLocaleDateString('id-ID')}
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedDebt(debt);
+                            setShowOverdueDebts(false);
+                            setShowDebtPaymentConfirmation(true);
+                          }}
+                          className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition"
+                        >
+                          Lunasi Sekarang
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="pt-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowOverdueDebts(false)}
+                className="w-full px-4 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
 
-// Komponen Bottom Navigation Button yang Diperbarui
-const BottomNavButton = ({ active, onClick, icon, label }) => (
+// Komponen Bottom Navigation Button
+const BottomNavButton = ({ active, onClick, icon, label, badgeCount = 0 }) => (
   <button
     onClick={onClick}
-    className={`flex flex-col items-center py-3 px-4 transition-all ${
+    className={`flex flex-col items-center py-3 px-2 transition-all relative group ${
       active
         ? 'text-purple-600'
         : 'text-gray-500 hover:text-gray-700'
     }`}
   >
-    <div className={`p-2 rounded-lg transition-colors ${
-      active ? 'bg-purple-100' : 'hover:bg-gray-100'
+    <div className={`p-2 rounded-xl transition-all duration-200 relative ${
+      active 
+        ? 'bg-gradient-to-br from-purple-100 to-purple-50 shadow-sm' 
+        : 'group-hover:bg-gray-100'
     }`}>
       {icon}
+      {badgeCount > 0 && (
+        <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 ring-2 ring-white">
+          {badgeCount > 9 ? '9+' : badgeCount}
+        </span>
+      )}
     </div>
     <span className="text-xs mt-1 font-medium">{label}</span>
+    
+    {active && (
+      <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-1 bg-gradient-to-r from-purple-500 to-purple-700 rounded-t-lg"></div>
+    )}
   </button>
 );
 
@@ -1753,22 +2095,42 @@ const BottomNavButton = ({ active, onClick, icon, label }) => (
 const LoginPage = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (onLogin(username, password)) {
-      setUsername('');
-      setPassword('');
-    } else {
-      alert('Username atau password salah!');
+    if (!username || !password) {
+      alert('Username dan password harus diisi!');
+      return;
     }
+    
+    setIsLoading(true);
+    
+    // Simulasi loading
+    setTimeout(() => {
+      if (onLogin(username, password)) {
+        setUsername('');
+        setPassword('');
+      } else {
+        alert('Username atau password salah!');
+      }
+      setIsLoading(false);
+    }, 500);
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-yellow-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md transform transition-all hover:shadow-3xl">
         <div className="text-center mb-8">
-          <Package className="h-16 w-16 text-purple-600 mx-auto mb-4" />
+          <div className="relative inline-block mb-4">
+            <div className="bg-gradient-to-r from-purple-500 to-purple-700 p-4 rounded-2xl inline-block">
+              <Package className="h-16 w-16 text-white" />
+            </div>
+            <div className="absolute -top-2 -right-2 bg-yellow-400 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shadow-lg">
+              WiFi
+            </div>
+          </div>
           <h1 className="text-3xl font-bold text-gray-800">wifisekre.net</h1>
           <p className="text-gray-600 mt-2">Sistem Manajemen Penjualan Voucher</p>
         </div>
@@ -1779,41 +2141,74 @@ const LoginPage = ({ onLogin }) => {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base transition"
               required
               placeholder="Masukkan username"
+              disabled={isLoading}
             />
           </div>
-          <div>
+          <div className="relative">
             <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base transition pr-12"
               required
               placeholder="Masukkan password"
+              disabled={isLoading}
             />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-10 text-gray-500 hover:text-gray-700"
+            >
+              {showPassword ? (
+                <Eye className="h-5 w-5" />
+              ) : (
+                <Eye className="h-5 w-5" />
+              )}
+            </button>
           </div>
           <button
             type="submit"
-            className="w-full bg-purple-600 text-white py-3 rounded-lg font-medium hover:bg-purple-700 transition text-base"
+            disabled={isLoading}
+            className={`w-full py-3 rounded-lg font-medium text-base transition ${
+              isLoading
+                ? 'bg-purple-400 cursor-not-allowed'
+                : 'bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 transform hover:scale-[1.02] active:scale-95'
+            } text-white`}
           >
-            Login
+            {isLoading ? (
+              <span className="flex items-center justify-center">
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                Loading...
+              </span>
+            ) : (
+              'Login'
+            )}
           </button>
         </form>
+        
+        <div className="mt-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
+          <p className="text-sm text-purple-700 flex items-start">
+            <Info className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+            <span>Gunakan username dan password yang diberikan admin untuk login ke sistem</span>
+          </p>
+        </div>
       </div>
     </div>
   );
 };
 
-// Komponen Dashboard Tab dengan Notifikasi dan Total Semua Admin
+// Komponen Dashboard Tab dengan Notifikasi
 const DashboardTab = ({ 
   currentUser, vouchers, sales, debts, admins, getTotalRevenue, getTotalDebtAmount, 
   getAvailableVouchers, getAdminSales, getAdminDebts, getAdminRevenue,
   getTotalCashAllAdmins, getTotalDebtAllAdmins, getTotalUnpaidDebtAllAdmins, getTotalPaidDebtAllAdmins,
   getUnpaidDebtCount, getPaidDebtCount,
-  onPrintReport, reportRef, notifications 
+  onPrintReport, reportRef, notifications,
+  overdueDebtsList, setShowOverdueDebts
 }) => {
   const isSuperadmin = currentUser.role === 'superadmin';
   const myRevenue = getTotalRevenue(currentUser.id);
@@ -1834,14 +2229,55 @@ const DashboardTab = ({
   return (
     <div className="space-y-6">
       {/* Welcome Card */}
-      <div className="bg-gradient-to-r from-purple-500 to-purple-700 rounded-2xl p-6 text-white shadow-lg">
-        <h1 className="text-2xl font-bold">Welcome, {currentUser.name}! 👋</h1>
-        <p className="text-purple-100 mt-1">Selamat berjuang hari ini! Semoga penjualan lancar!</p>
-        <div className="flex items-center mt-3 text-sm text-purple-200">
-          <User className="h-4 w-4 mr-1" />
-          <span>Role: {currentUser.role === 'superadmin' ? 'Super Admin' : 'Admin'}</span>
+      <div className="bg-gradient-to-r from-purple-500 to-purple-700 rounded-2xl p-6 text-white shadow-lg transform transition-transform hover:scale-[1.01] duration-300">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">Selamat datang, {currentUser.name}! 👋</h1>
+            <p className="text-purple-100 mt-1 opacity-90">Selamat berjuang hari ini! Semoga penjualan lancar!</p>
+            <div className="flex items-center mt-3 text-sm text-purple-200">
+              <User className="h-4 w-4 mr-1" />
+              <span>Role: {currentUser.role === 'superadmin' ? 'Super Admin' : 'Admin'}</span>
+              <span className="mx-2">•</span>
+              <span>{getAvailableVouchers().length} voucher tersedia</span>
+              {overdueDebtsList.length > 0 && (
+                <>
+                  <span className="mx-2">•</span>
+                  <span className="text-red-200">
+                    <AlertCircle className="h-3 w-3 inline mr-1" />
+                    {overdueDebtsList.length} hutang overdue
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+          <div className="hidden md:block">
+            <div className="bg-white/20 backdrop-blur-sm rounded-full p-3">
+              <Sparkles className="h-8 w-8" />
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Alert Overdue Debts */}
+      {overdueDebtsList.length > 0 && (
+        <div className="bg-gradient-to-r from-red-500 to-red-600 rounded-2xl p-4 text-white shadow-lg animate-pulse">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <AlertCircle className="h-6 w-6 mr-3" />
+              <div>
+                <p className="font-bold">HUTANG JATUH TEMPO!</p>
+                <p className="text-sm opacity-90">{overdueDebtsList.length} hutang belum lunas selama 7 hari atau lebih</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowOverdueDebts(true)}
+              className="px-4 py-2 bg-white text-red-600 rounded-lg font-medium hover:bg-gray-100 transition"
+            >
+              Lihat Detail
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h2 className="text-2xl font-bold text-gray-800">Dashboard Overview</h2>
@@ -1861,28 +2297,36 @@ const DashboardTab = ({
           title="Voucher Tersedia"
           value={getAvailableVouchers().length}
           color="bg-purple-500"
+          trend={getAvailableVouchers().length < 10 ? "low" : "good"}
+          description="Siap dijual"
         />
         <StatCard
           icon={<DollarSign className="h-8 w-8" />}
           title={isSuperadmin ? "Pendapatan Cash" : "Pendapatan Cash Saya"}
           value={`Rp ${(isSuperadmin ? totalRevenue : myRevenue).toLocaleString('id-ID')}`}
           color="bg-green-500"
+          trend="up"
+          description="Dari penjualan cash"
         />
         <StatCard
           icon={<FileText className="h-8 w-8" />}
           title={isSuperadmin ? "Hutang Belum Lunas" : "Hutang Belum Lunas Saya"}
           value={`Rp ${(isSuperadmin ? totalDebt : myDebt).toLocaleString('id-ID')}`}
           color="bg-red-500"
+          trend={totalDebt > 0 ? "warning" : "good"}
+          description="Perlu ditagih"
         />
         <StatCard
           icon={<Users className="h-8 w-8" />}
           title={isSuperadmin ? "Total Penjualan" : "Penjualan Saya"}
           value={isSuperadmin ? sales.length : getAdminSales(currentUser.id).length}
           color="bg-yellow-500"
+          trend="up"
+          description="Transaksi sukses"
         />
       </div>
 
-      {/* Statistik Hutang - LUNAS vs BELUM LUNAS */}
+      {/* Statistik Hutang */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
           <FileText className="h-5 w-5" />
@@ -1958,66 +2402,13 @@ const DashboardTab = ({
         </div>
       </div>
 
-      {/* Notifications Section */}
-      {notifications.length > 0 && (
-        <div className="bg-white rounded-xl shadow-md p-6">
-          <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-            Notifikasi Terbaru
-          </h3>
-          <div className="space-y-3">
-            {notifications.slice(0, 5).map((notification) => (
-              <div
-                key={notification.id}
-                className={`p-4 rounded-lg border ${
-                  notification.isNew 
-                    ? 'bg-blue-50 border-blue-200' 
-                    : 'bg-gray-50 border-gray-200'
-                }`}
-              >
-                <div className="flex items-start space-x-3">
-                  <div className={`p-2 rounded-full ${
-                    notification.type === 'sale' 
-                      ? 'bg-green-100 text-green-600'
-                      : notification.type === 'debt'
-                      ? 'bg-yellow-100 text-yellow-600'
-                      : 'bg-blue-100 text-blue-600'
-                  }`}>
-                    {notification.type === 'sale' && <TrendingUp className="h-4 w-4" />}
-                    {notification.type === 'debt' && <FileText className="h-4 w-4" />}
-                    {notification.type === 'payment' && <Wallet className="h-4 w-4" />}
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium text-gray-800">
-                      {notification.title}
-                    </p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {notification.message}
-                    </p>
-                    {notification.amount && (
-                      <p className="text-sm text-gray-700 mt-1 font-medium">
-                        Rp {notification.amount.toLocaleString('id-ID')}
-                      </p>
-                    )}
-                    <p className="text-xs text-gray-400 mt-1">
-                      {new Date(notification.timestamp).toLocaleString('id-ID')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Recent Sales dengan Icon */}
+      {/* Recent Sales */}
       <div className="bg-white rounded-xl shadow-md p-6">
         <h3 className="text-xl font-bold text-gray-800 mb-4">Penjualan Terbaru</h3>
         <div className="space-y-3">
           {sales.slice(0, 5).map(sale => (
-            <div key={sale.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+            <div key={sale.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
               <div className="flex items-center flex-1 min-w-0">
-                {/* Icon berdasarkan metode pembayaran */}
                 <div className={`mr-3 p-2 rounded-full ${
                   sale.payment_method === 'cash' 
                     ? 'bg-green-100 text-green-600' 
@@ -2030,7 +2421,7 @@ const DashboardTab = ({
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800">Voucher: {sale.voucher_code}</p>
+                  <p className="font-medium text-gray-800 truncate">Voucher: {sale.voucher_code}</p>
                   <p className="text-sm text-gray-600">
                     {sale.payment_method === 'cash' ? 'Cash' : 'Hutang'} • {sale.admin?.name || 'N/A'}
                   </p>
@@ -2048,7 +2439,7 @@ const DashboardTab = ({
               <div className="text-right ml-3">
                 <p className="font-bold text-green-600">Rp {sale.amount.toLocaleString('id-ID')}</p>
                 {sale.customer_name !== '-' && (
-                  <p className="text-sm text-gray-600">{sale.customer_name}</p>
+                  <p className="text-sm text-gray-600 truncate max-w-[120px]">{sale.customer_name}</p>
                 )}
               </div>
             </div>
@@ -2109,7 +2500,7 @@ const DashboardTab = ({
   );
 };
 
-// Komponen Sell Tab dengan Tampilan Voucher yang Lebih Menarik
+// Komponen Sell Tab
 const SellTab = ({ 
   vouchers, 
   saleForm, 
@@ -2125,8 +2516,14 @@ const SellTab = ({
 }) => {
   const availableVouchers = getAvailableVouchers();
   const totalAmount = saleForm.voucherCodes.length * 1000;
-
   const nameSuggestions = getFilteredSuggestions(saleForm.customerName);
+
+  const isFormValid = () => {
+    if (saleForm.voucherCodes.length === 0) return false;
+    if (!saleForm.customerName.trim()) return false;
+    if (saleForm.paymentMethod === 'hutang' && !saleForm.customerPhone.trim()) return false;
+    return true;
+  };
 
   const selectNameSuggestion = (name) => {
     setSaleForm({ ...saleForm, customerName: name });
@@ -2140,10 +2537,23 @@ const SellTab = ({
 
   return (
     <div className="bg-white rounded-xl shadow-md p-6 max-w-6xl mx-auto">
-      <h2 className="text-2xl font-bold text-gray-800 mb-6">Jual Voucher WiFi</h2>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-800">Jual Voucher WiFi</h2>
+          <p className="text-gray-600 mt-1">Pilih voucher, isi data pelanggan, dan proses penjualan</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="bg-purple-100 text-purple-700 px-3 py-1 rounded-full text-sm font-medium">
+            {availableVouchers.length} tersedia
+          </div>
+          <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm font-medium">
+            {saleForm.voucherCodes.length} terpilih
+          </div>
+        </div>
+      </div>
       
       <div className="space-y-6">
-        {/* Voucher Selection - TAMPILAN BARU YANG LEBIH MENARIK */}
+        {/* Voucher Selection */}
         <div>
           <div className="flex justify-between items-center mb-4">
             <label className="block text-lg font-bold text-gray-800">
@@ -2157,7 +2567,6 @@ const SellTab = ({
             </div>
           </div>
           
-          {/* Grid Voucher yang Lebih Menarik */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 max-h-[500px] overflow-y-auto p-4 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50">
             {availableVouchers.map(v => (
               <div
@@ -2172,7 +2581,6 @@ const SellTab = ({
                   }
                 `}
               >
-                {/* Check Indicator */}
                 <div className={`absolute top-3 right-3 w-7 h-7 rounded-full flex items-center justify-center border-2 ${
                   saleForm.voucherCodes.includes(v.code)
                     ? 'bg-white text-purple-600 border-white'
@@ -2183,7 +2591,6 @@ const SellTab = ({
                   )}
                 </div>
 
-                {/* Voucher Content */}
                 <div className="flex-1">
                   <div className="mb-3">
                     <p className={`font-bold text-lg mb-2 ${
@@ -2206,14 +2613,12 @@ const SellTab = ({
                   </div>
                 </div>
 
-                {/* Price Tag */}
                 <div className={`text-right ${
                   saleForm.voucherCodes.includes(v.code) ? 'text-yellow-300' : 'text-green-600'
                 }`}>
                   <p className="text-sm font-bold">Rp 1.000</p>
                 </div>
 
-                {/* Selected Overlay Effect */}
                 {saleForm.voucherCodes.includes(v.code) && (
                   <div className="absolute inset-0 border-2 border-yellow-400 rounded-2xl pointer-events-none animate-pulse"></div>
                 )}
@@ -2229,7 +2634,6 @@ const SellTab = ({
             )}
           </div>
 
-          {/* Quick Actions */}
           {availableVouchers.length > 0 && (
             <div className="flex gap-3 mt-4">
               <button
@@ -2257,7 +2661,7 @@ const SellTab = ({
           )}
         </div>
 
-        {/* Customer Name dengan Autocomplete - TAMBAH REQUIRED */}
+        {/* Customer Name */}
         <div className="relative">
           <label className="block text-sm font-medium text-gray-700 mb-2">
             Nama Pelanggan <span className="text-red-500">*</span>
@@ -2361,7 +2765,7 @@ const SellTab = ({
           </div>
         )}
 
-        {/* Total Amount - TAMPILAN LEBIH BESAR */}
+        {/* Total Amount */}
         <div className="bg-gradient-to-r from-purple-50 to-blue-50 p-6 rounded-2xl border-2 border-purple-200">
           <div className="flex justify-between items-center mb-4">
             <span className="text-gray-700 text-lg font-medium">Jumlah Voucher:</span>
@@ -2379,18 +2783,8 @@ const SellTab = ({
           </div>
         </div>
 
-        {/* Submit Button */}
-        <button
-          onClick={handleSellVoucher}
-          disabled={saleForm.voucherCodes.length === 0 || !saleForm.customerName.trim()}
-          className="w-full px-6 py-4 bg-gradient-to-r from-purple-500 to-purple-700 text-white rounded-xl font-bold hover:from-purple-600 hover:to-purple-800 transition-all duration-300 transform hover:scale-105 disabled:bg-gray-300 disabled:cursor-not-allowed text-lg shadow-lg disabled:transform-none disabled:hover:scale-100 disabled:shadow-none"
-        >
-          <CreditCard className="h-6 w-6 inline mr-3" />
-          PROSES PENJUALAN - Rp {totalAmount.toLocaleString('id-ID')}
-        </button>
-
         {/* Validation Message */}
-        {!saleForm.customerName.trim() && (
+        {!isFormValid() && (
           <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
             <p className="text-red-700 text-sm flex items-center gap-2 font-medium">
               <AlertCircle className="h-4 w-4" />
@@ -2398,12 +2792,30 @@ const SellTab = ({
             </p>
           </div>
         )}
+
+        {/* Submit Button */}
+        <button
+          onClick={handleSellVoucher}
+          disabled={!isFormValid()}
+          className={`w-full px-6 py-4 text-white rounded-xl font-bold transition-all duration-300 text-lg shadow-lg ${
+            isFormValid() 
+              ? 'bg-gradient-to-r from-purple-500 to-purple-700 hover:from-purple-600 hover:to-purple-800 transform hover:scale-[1.02] active:scale-95' 
+              : 'bg-gray-300 cursor-not-allowed opacity-50'
+          }`}
+        >
+          <CreditCard className="h-6 w-6 inline mr-3" />
+          {isFormValid() ? (
+            `PROSES PENJUALAN - Rp ${totalAmount.toLocaleString('id-ID')}`
+          ) : (
+            'LENGKAPI FORM TERLEBIH DAHULU'
+          )}
+        </button>
       </div>
     </div>
   );
 };
 
-// Komponen Sales Tab - SEMUA ADMIN BISA LIHAT SEMUA PENJUALAN
+// Komponen Sales Tab
 const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintReport, reportRef }) => {
   const [showFilters, setShowFilters] = useState(false);
 
@@ -2582,7 +2994,7 @@ const SalesTab = ({ currentUser, sales, admins, filters, setFilters, onPrintRepo
   );
 };
 
-// Komponen DebtsTab - DIMODIFIKASI untuk sistem lunas/belum lunas saja
+// Komponen DebtsTab
 const DebtsTab = ({ 
   currentUser, 
   debts, 
@@ -2594,46 +3006,37 @@ const DebtsTab = ({
   reportRef,
   handlePayDebtOneClick,
   setShowDebtPaymentConfirmation,
-  filterDebts
+  filterDebts,
+  overdueDebtsList,
+  setShowOverdueDebts
 }) => {
   const [showFilters, setShowFilters] = useState(false);
 
-  // Filter status hanya untuk lunas dan belum lunas
   const statusOptions = [
     { value: '', label: 'Semua Status' },
     { value: 'unpaid', label: 'Belum Lunas' },
     { value: 'paid', label: 'Lunas' }
   ];
 
-  // FUNGSI BARU: Mengurutkan hutang - BELUM LUNAS di atas, LUNAS di bawah
   const sortDebts = (debtsList) => {
     if (!debtsList || debtsList.length === 0) return [];
     
-    // Buat salinan array untuk diurutkan
     const sorted = [...debtsList];
     
-    // Urutkan berdasarkan:
-    // 1. Status: unpaid (belum lunas) dulu, baru paid (lunas)
-    // 2. Untuk yang status sama: berdasarkan sisa hutang terbesar ke terkecil
-    // 3. Untuk yang status sama dan sisa hutang sama: berdasarkan tanggal terbaru
     sorted.sort((a, b) => {
-      // Prioritas 1: Status (unpaid dulu)
       if (a.status === 'unpaid' && b.status === 'paid') return -1;
       if (a.status === 'paid' && b.status === 'unpaid') return 1;
       
-      // Prioritas 2: Sisa hutang (terbesar ke terkecil)
       if (a.status === 'unpaid' && b.status === 'unpaid') {
         return b.remaining - a.remaining;
       }
       
-      // Prioritas 3: Tanggal terbaru (untuk yang sudah lunas)
       return new Date(b.created_at) - new Date(a.created_at);
     });
     
     return sorted;
   };
 
-  // Filter dan urutkan hutang
   const filteredDebts = filterDebts(debts);
   const sortedDebts = sortDebts(filteredDebts);
 
@@ -2643,6 +3046,15 @@ const DebtsTab = ({
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
           <h2 className="text-2xl font-bold text-gray-800">Semua Data Hutang Pelanggan</h2>
           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            {overdueDebtsList.length > 0 && (
+              <button
+                onClick={() => setShowOverdueDebts(true)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2 text-sm justify-center"
+              >
+                <AlertCircle className="h-4 w-4" />
+                {overdueDebtsList.length} Overdue
+              </button>
+            )}
             <button
               onClick={() => setShowFilters(!showFilters)}
               className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition flex items-center gap-2 text-sm justify-center"
@@ -2765,95 +3177,109 @@ const DebtsTab = ({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-8">
                   {sortedDebts
                     .filter(debt => debt.status === 'unpaid')
-                    .map(debt => (
-                    <div key={debt.id} className="border-2 border-red-300 rounded-lg p-4 bg-red-50 shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex-1 min-w-0">
-                          <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
-                          <p className="text-sm text-gray-600">{debt.customer_phone}</p>
-                          <div className="flex items-center gap-1 mt-1">
-                            <User className="h-3 w-3 text-gray-400" />
-                            <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
+                    .map(debt => {
+                      const daysDiff = getDaysDiff(debt.created_at);
+                      return (
+                      <div key={debt.id} className={`border-2 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow ${
+                        daysDiff >= 7 ? 'border-red-300 bg-red-50' : 'border-yellow-300 bg-yellow-50'
+                      }`}>
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-bold text-gray-800">{debt.customer_name}</h3>
+                            <p className="text-sm text-gray-600">{debt.customer_phone}</p>
+                            <div className="flex items-center gap-1 mt-1">
+                              <User className="h-3 w-3 text-gray-400" />
+                              <p className="text-xs text-gray-500">Admin: {debt.admin?.name || 'N/A'}</p>
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {new Date(debt.created_at).toLocaleString('id-ID', {
+                                day: '2-digit',
+                                month: 'short',
+                                year: 'numeric'
+                              })}
+                            </p>
+                            {daysDiff >= 7 && (
+                              <p className="text-xs text-red-600 mt-1 font-medium flex items-center gap-1">
+                                <Clock className="h-3 w-3" />
+                                {daysDiff} hari belum lunas
+                              </p>
+                            )}
                           </div>
-                          <p className="text-xs text-gray-500 mt-1">
-                            {new Date(debt.created_at).toLocaleString('id-ID', {
-                              day: '2-digit',
-                              month: 'short',
-                              year: 'numeric'
-                            })}
-                          </p>
-                        </div>
-                        <span className="px-3 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
-                          BELUM LUNAS
-                        </span>
-                      </div>
-                      
-                      <div className="space-y-2 mb-3">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Total Hutang:</span>
-                          <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600">Sudah Dibayar:</span>
-                          <span className="font-medium text-yellow-600">
-                            Rp {debt.paid.toLocaleString('id-ID')}
+                          <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            daysDiff >= 7 
+                              ? 'bg-red-100 text-red-700 border border-red-300' 
+                              : 'bg-yellow-100 text-yellow-700 border border-yellow-300'
+                          }`}>
+                            {daysDiff >= 7 ? 'OVERDUE' : 'BELUM LUNAS'}
                           </span>
                         </div>
-                        <div className="flex justify-between text-lg font-bold">
-                          <span className="text-gray-800">Sisa Hutang:</span>
-                          <span className="text-red-600">Rp {debt.remaining.toLocaleString('id-ID')}</span>
-                        </div>
-                      </div>
-
-                      <div className="mb-3">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full transition-all ${
-                              debt.remaining === 0 
-                                ? 'bg-green-500' 
-                                : debt.paid > 0 
-                                  ? 'bg-yellow-500' 
-                                  : 'bg-red-500'
-                            }`}
-                            style={{ width: `${(debt.paid / debt.amount) * 100}%` }}
-                          ></div>
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1 text-center">
-                          {((debt.paid / debt.amount) * 100).toFixed(0)}% terbayar
-                        </p>
-                      </div>
-
-                      {debt.payments && debt.payments.length > 0 && (
-                        <div className="mb-3">
-                          <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
-                          <div className="space-y-1 max-h-24 overflow-y-auto">
-                            {debt.payments.map(payment => (
-                              <div key={payment.id} className="text-xs bg-white p-2 rounded border">
-                                <div className="flex justify-between">
-                                  <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
-                                  <span className="text-gray-500">
-                                    {new Date(payment.paid_at).toLocaleDateString('id-ID')}
-                                  </span>
-                                </div>
-                                <p className="text-gray-500 text-xs">Tipe: {payment.payment_type === 'full' ? 'Pelunasan' : 'Pembayaran'}</p>
-                              </div>
-                            ))}
+                        
+                        <div className="space-y-2 mb-3">
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Total Hutang:</span>
+                            <span className="font-medium">Rp {debt.amount.toLocaleString('id-ID')}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-gray-600">Sudah Dibayar:</span>
+                            <span className="font-medium text-yellow-600">
+                              Rp {debt.paid.toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          <div className="flex justify-between text-lg font-bold">
+                            <span className="text-gray-800">Sisa Hutang:</span>
+                            <span className="text-red-600">Rp {debt.remaining.toLocaleString('id-ID')}</span>
                           </div>
                         </div>
-                      )}
 
-                      <button
-                        onClick={() => {
-                          setSelectedDebt(debt);
-                          setShowDebtPaymentConfirmation(true);
-                        }}
-                        className="w-full px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition text-sm font-medium flex items-center justify-center gap-2 shadow-md mt-2"
-                      >
-                        <DollarSign className="h-4 w-4" />
-                        LUNASI HUTANG (Rp {debt.remaining.toLocaleString('id-ID')})
-                      </button>
-                    </div>
-                  ))}
+                        <div className="mb-3">
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full transition-all ${
+                                debt.remaining === 0 
+                                  ? 'bg-green-500' 
+                                  : debt.paid > 0 
+                                    ? 'bg-yellow-500' 
+                                    : 'bg-red-500'
+                              }`}
+                              style={{ width: `${(debt.paid / debt.amount) * 100}%` }}
+                            ></div>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1 text-center">
+                            {((debt.paid / debt.amount) * 100).toFixed(0)}% terbayar
+                          </p>
+                        </div>
+
+                        {debt.payments && debt.payments.length > 0 && (
+                          <div className="mb-3">
+                            <p className="text-xs font-medium text-gray-700 mb-1">Riwayat Pembayaran:</p>
+                            <div className="space-y-1 max-h-24 overflow-y-auto">
+                              {debt.payments.map(payment => (
+                                <div key={payment.id} className="text-xs bg-white p-2 rounded border">
+                                  <div className="flex justify-between">
+                                    <span>Rp {payment.amount.toLocaleString('id-ID')}</span>
+                                    <span className="text-gray-500">
+                                      {new Date(payment.paid_at).toLocaleDateString('id-ID')}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => {
+                            setSelectedDebt(debt);
+                            setShowDebtPaymentConfirmation(true);
+                          }}
+                          className="w-full px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg hover:from-red-600 hover:to-red-700 transition text-sm font-medium flex items-center justify-center gap-2 shadow-md mt-2"
+                        >
+                          <DollarSign className="h-4 w-4" />
+                          LUNASI HUTANG (Rp {debt.remaining.toLocaleString('id-ID')})
+                        </button>
+                      </div>
+                    )}
+                  )}
                 </div>
               )}
 
@@ -2927,7 +3353,6 @@ const DebtsTab = ({
                                     {new Date(payment.paid_at).toLocaleDateString('id-ID')}
                                   </span>
                                 </div>
-                                <p className="text-gray-500 text-xs">Tipe: {payment.payment_type === 'full' ? 'Pelunasan' : 'Pembayaran'}</p>
                               </div>
                             ))}
                           </div>
@@ -2959,7 +3384,7 @@ const DebtsTab = ({
   );
 };
 
-// Komponen Admins Tab dengan Total Semua Admin
+// Komponen Admins Tab
 const AdminsTab = ({ 
   admins, 
   setShowAdminModal, 
@@ -3035,7 +3460,7 @@ const AdminsTab = ({
             const statusColor = revenue.unpaidDebtCount === 0 ? 'text-green-600' : 'text-red-600';
             
             return (
-              <div key={admin.id} className="border border-gray-200 rounded-lg p-4">
+              <div key={admin.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-gray-800">{admin.name}</h3>
@@ -3101,32 +3526,80 @@ const AdminsTab = ({
 };
 
 // Komponen StatCard
-const StatCard = ({ icon, title, value, color, compact = false }) => {
+const StatCard = ({ icon, title, value, color, compact = false, trend = null, description = "" }) => {
+  const trendColors = {
+    up: "text-green-500",
+    down: "text-red-500",
+    warning: "text-yellow-500",
+    low: "text-orange-500",
+    good: "text-emerald-500"
+  };
+
   return (
-    <div className={`bg-white rounded-xl shadow-md ${compact ? 'p-3' : 'p-6'}`}>
-      <div className={`${color} w-12 h-12 rounded-lg flex items-center justify-center text-white mb-3`}>
-        {icon}
+    <div className={`bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300 ${compact ? 'p-3' : 'p-6'} relative overflow-hidden group`}>
+      <div className={`absolute -right-8 -top-8 w-24 h-24 ${color} opacity-10 rounded-full group-hover:scale-150 transition-transform duration-500`}></div>
+      
+      <div className="flex items-start justify-between mb-3">
+        <div className={`${color} w-12 h-12 rounded-xl flex items-center justify-center text-white shadow-md`}>
+          {icon}
+        </div>
+        {trend && (
+          <div className={`text-sm font-medium ${trendColors[trend]}`}>
+            {trend === 'up' && '↑'}
+            {trend === 'down' && '↓'}
+            {trend === 'warning' && '⚠'}
+            {trend === 'low' && '!'}
+            {trend === 'good' && '✓'}
+          </div>
+        )}
       </div>
       <h3 className={`text-gray-600 ${compact ? 'text-xs' : 'text-sm'} font-medium mb-1`}>{title}</h3>
-      <p className={`font-bold text-gray-800 ${compact ? 'text-lg' : 'text-2xl'}`}>{value}</p>
+      <p className={`font-bold text-gray-800 ${compact ? 'text-lg' : 'text-2xl'} mb-2`}>{value}</p>
+      {description && (
+        <p className="text-xs text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          {description}
+        </p>
+      )}
     </div>
   );
 };
 
 // Komponen Modal
 const Modal = ({ title, children, onClose, size = 'normal' }) => {
+  const modalRef = useRef(null);
+
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  const handleClickOutside = (e) => {
+    if (modalRef.current && !modalRef.current.contains(e.target)) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className={`bg-white rounded-xl shadow-2xl w-full max-h-[90vh] overflow-y-auto ${
-        size === 'large' ? 'max-w-2xl' : 'max-w-md'
-      }`}>
-        <div className="flex justify-between items-center p-6 border-b border-gray-200 sticky top-0 bg-white">
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 animate-fadeIn"
+      onClick={handleClickOutside}
+    >
+      <div 
+        ref={modalRef}
+        className={`bg-white rounded-xl shadow-2xl w-full max-h-[90vh] overflow-y-auto animate-slideUp ${
+          size === 'large' ? 'max-w-2xl' : 'max-w-md'
+        }`}
+      >
+        <div className="flex justify-between items-center p-6 border-b border-gray-200 sticky top-0 bg-white z-10">
           <h3 className="text-xl font-bold text-gray-800">{title}</h3>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 transition p-1"
+            className="text-gray-400 hover:text-gray-600 transition p-1 hover:bg-gray-100 rounded-lg"
           >
-            <XCircle className="h-6 w-6" />
+            <X className="h-6 w-6" />
           </button>
         </div>
         <div className="p-6">
@@ -3136,22 +3609,5 @@ const Modal = ({ title, children, onClose, size = 'normal' }) => {
     </div>
   );
 };
-
-// Komponen Info
-const Info = (props) => (
-  <svg
-    {...props}
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-  >
-    <circle cx="12" cy="12" r="10" />
-    <line x1="12" y1="16" x2="12" y2="12" />
-    <line x1="12" y1="8" x2="12.01" y2="8" />
-  </svg>
-);
 
 export default WifiVoucherSalesApp;
